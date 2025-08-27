@@ -1,0 +1,595 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <title>LCOV - merged.info - rust/src/courier.rs</title>
+  <link rel="stylesheet" type="text/css" href="../../gcov.css">
+</head>
+
+<body>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="title">LCOV - code coverage report</td></tr>
+            <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+
+            <tr>
+              <td width="100%">
+                <table cellpadding=1 border=0 width="100%">
+          <tr>
+            <td width="10%" class="headerItem">Current view:</td>
+            <td width="10%" class="headerValue"><a href="../../index.html">top level</a> - <a href="index.html">rust/src</a> - courier.rs<span style="font-size: 80%;"> (source / <a href="courier.rs.func-c.html">functions</a>)</span></td>
+            <td width="5%"></td>
+            <td width="5%"></td>
+            <td width="5%" class="headerCovTableHead">Coverage</td>
+            <td width="5%" class="headerCovTableHead" title="Covered + Uncovered code">Total</td>
+            <td width="5%" class="headerCovTableHead" title="Exercised code only">Hit</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test:</td>
+            <td class="headerValue">merged.info</td>
+            <td></td>
+            <td class="headerItem">Lines:</td>
+            <td class="headerCovTableEntryLo">74.9&nbsp;%</td>
+            <td class="headerCovTableEntry">175</td>
+            <td class="headerCovTableEntry">131</td>
+          </tr>
+          <tr>
+            <td class="headerItem">Test Date:</td>
+            <td class="headerValue">2025-08-27 13:13:22</td>
+            <td></td>
+            <td class="headerItem">Functions:</td>
+            <td class="headerCovTableEntryMed">81.6&nbsp;%</td>
+            <td class="headerCovTableEntry">38</td>
+            <td class="headerCovTableEntry">31</td>
+          </tr>
+                  <tr><td><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+                </table>
+              </td>
+            </tr>
+
+            <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+          </table>
+
+          <table cellpadding=0 cellspacing=0 border=0>
+            <tr>
+              <td><br></td>
+            </tr>
+            <tr>
+              <td>
+<pre class="sourceHeading">            Line data    Source code</pre>
+<pre class="source">
+<span id="L1"><span class="lineNum">       1</span>              : use crate::context::Context;</span>
+<span id="L2"><span class="lineNum">       2</span>              : use crate::{</span>
+<span id="L3"><span class="lineNum">       3</span>              :     db::{dbtx_from_ctx, DBTx, DB},</span>
+<span id="L4"><span class="lineNum">       4</span>              :     msg::Msg,</span>
+<span id="L5"><span class="lineNum">       5</span>              :     pact::Pact,</span>
+<span id="L6"><span class="lineNum">       6</span>              :     receipt::Receipt,</span>
+<span id="L7"><span class="lineNum">       7</span>              :     txrx::{Rx, Tx},</span>
+<span id="L8"><span class="lineNum">       8</span>              : };</span>
+<span id="L9"><span class="lineNum">       9</span>              : use async_trait::async_trait;</span>
+<span id="L10"><span class="lineNum">      10</span>              : use lazy_static::lazy_static;</span>
+<span id="L11"><span class="lineNum">      11</span>              : use log::{error, info};</span>
+<span id="L12"><span class="lineNum">      12</span>              : use std::sync::atomic::AtomicU64;</span>
+<span id="L13"><span class="lineNum">      13</span>              : use std::sync::atomic::Ordering::Relaxed;</span>
+<span id="L14"><span class="lineNum">      14</span>              : use std::sync::Arc;</span>
+<span id="L15"><span class="lineNum">      15</span>              : use std::sync::RwLock;</span>
+<span id="L16"><span class="lineNum">      16</span>              : use Result;</span>
+<span id="L17"><span class="lineNum">      17</span>              : </span>
+<span id="L18"><span class="lineNum">      18</span>              : lazy_static! {</span>
+<span id="L19"><span class="lineNum">      19</span> <span class="tlaGNC tlaBgGNC">           1 :     pub static ref MSG_ACK_TYPE: String = &quot;Ack&quot;.to_string();</span></span>
+<span id="L20"><span class="lineNum">      20</span> <span class="tlaUNC tlaBgUNC">           0 :     pub static ref MSG_TYPE_TEXT: String = &quot;text&quot;.to_string();</span></span>
+<span id="L21"><span class="lineNum">      21</span> <span class="tlaUNC">           0 :     pub static ref MSG_TYPE_COMMAND: String = &quot;command&quot;.to_string();</span></span>
+<span id="L22"><span class="lineNum">      22</span> <span class="tlaUNC">           0 :     pub static ref MSG_TYPE_EVENT: String = &quot;event&quot;.to_string();</span></span>
+<span id="L23"><span class="lineNum">      23</span>              :     // Add more message types as needed</span>
+<span id="L24"><span class="lineNum">      24</span>              : }</span>
+<span id="L25"><span class="lineNum">      25</span>              : </span>
+<span id="L26"><span class="lineNum">      26</span>              : pub struct DAO {</span>
+<span id="L27"><span class="lineNum">      27</span>              :     db_prefix: String,</span>
+<span id="L28"><span class="lineNum">      28</span>              : }</span>
+<span id="L29"><span class="lineNum">      29</span>              : </span>
+<span id="L30"><span class="lineNum">      30</span>              : impl DAO {</span>
+<span id="L31"><span class="lineNum">      31</span> <span class="tlaGNC tlaBgGNC">           1 :     pub fn new(db_prefix: String) -&gt; Self {</span></span>
+<span id="L32"><span class="lineNum">      32</span>              :         DAO { db_prefix }</span>
+<span id="L33"><span class="lineNum">      33</span>              :     }</span>
+<span id="L34"><span class="lineNum">      34</span>              : </span>
+<span id="L35"><span class="lineNum">      35</span> <span class="tlaGNC">           1 :     fn key(&amp;self, kind: &amp;str, id: &amp;str) -&gt; String {</span></span>
+<span id="L36"><span class="lineNum">      36</span> <span class="tlaGNC">           1 :         format!(&quot;{}:{}:{}&quot;, self.db_prefix, kind, id)</span></span>
+<span id="L37"><span class="lineNum">      37</span>              :     }</span>
+<span id="L38"><span class="lineNum">      38</span>              : </span>
+<span id="L39"><span class="lineNum">      39</span> <span class="tlaGNC">           2 :     fn prefix(&amp;self, kind: &amp;str) -&gt; String {</span></span>
+<span id="L40"><span class="lineNum">      40</span> <span class="tlaGNC">           2 :         format!(&quot;{}:{}:&quot;, self.db_prefix, kind)</span></span>
+<span id="L41"><span class="lineNum">      41</span>              :     }</span>
+<span id="L42"><span class="lineNum">      42</span>              : </span>
+<span id="L43"><span class="lineNum">      43</span> <span class="tlaGNC">           6 :     fn get_obj&lt;T: serde::de::DeserializeOwned&gt;(</span></span>
+<span id="L44"><span class="lineNum">      44</span>              :         &amp;self,</span>
+<span id="L45"><span class="lineNum">      45</span>              :         dbtx: &amp;dyn DBTx,</span>
+<span id="L46"><span class="lineNum">      46</span>              :         key: &amp;str,</span>
+<span id="L47"><span class="lineNum">      47</span>              :     ) -&gt; Result&lt;Option&lt;T&gt;, String&gt; {</span>
+<span id="L48"><span class="lineNum">      48</span> <span class="tlaGNC">           6 :         let serialized = match dbtx.obj_get(key)? {</span></span>
+<span id="L49"><span class="lineNum">      49</span> <span class="tlaGNC">           4 :             Some(data) =&gt; data,</span></span>
+<span id="L50"><span class="lineNum">      50</span> <span class="tlaGNC">           2 :             None =&gt; return Ok(None),</span></span>
+<span id="L51"><span class="lineNum">      51</span>              :         };</span>
+<span id="L52"><span class="lineNum">      52</span> <span class="tlaGNC">           8 :         serde_json::from_slice(&amp;serialized)</span></span>
+<span id="L53"><span class="lineNum">      53</span> <span class="tlaGNC">           4 :             .map(Some)</span></span>
+<span id="L54"><span class="lineNum">      54</span> <span class="tlaGNC">           4 :             .map_err(|e| format!(&quot;failed to deserialize {}: {}&quot;, key, e))</span></span>
+<span id="L55"><span class="lineNum">      55</span>              :     }</span>
+<span id="L56"><span class="lineNum">      56</span> <span class="tlaGNC">           4 :     fn put_obj&lt;T: serde::Serialize&gt;(</span></span>
+<span id="L57"><span class="lineNum">      57</span>              :         &amp;self,</span>
+<span id="L58"><span class="lineNum">      58</span>              :         dbtx: &amp;dyn DBTx,</span>
+<span id="L59"><span class="lineNum">      59</span>              :         key: &amp;str,</span>
+<span id="L60"><span class="lineNum">      60</span>              :         obj: &amp;T,</span>
+<span id="L61"><span class="lineNum">      61</span>              :     ) -&gt; Result&lt;(), String&gt; {</span>
+<span id="L62"><span class="lineNum">      62</span> <span class="tlaGNC">           8 :         let serialized = serde_json::to_vec(obj).map_err(|_| &quot;failed to serialize object&quot;)?;</span></span>
+<span id="L63"><span class="lineNum">      63</span> <span class="tlaGNC">           4 :         dbtx.obj_put(key, serialized)</span></span>
+<span id="L64"><span class="lineNum">      64</span> <span class="tlaGNC">           4 :             .map_err(|e| format!(&quot;failed to put object: {:?}&quot;, e))</span></span>
+<span id="L65"><span class="lineNum">      65</span>              :     }</span>
+<span id="L66"><span class="lineNum">      66</span> <span class="tlaGNC">           2 :     fn del_obj(&amp;self, dbtx: &amp;dyn DBTx, key: &amp;str) -&gt; Result&lt;Option&lt;Vec&lt;u8&gt;&gt;, String&gt; {</span></span>
+<span id="L67"><span class="lineNum">      67</span> <span class="tlaGNC">           2 :         dbtx.obj_del(key)</span></span>
+<span id="L68"><span class="lineNum">      68</span> <span class="tlaGNC">           2 :             .map_err(|e| format!(&quot;failed to delete object: {}&quot;, e))</span></span>
+<span id="L69"><span class="lineNum">      69</span>              :     }</span>
+<span id="L70"><span class="lineNum">      70</span>              : </span>
+<span id="L71"><span class="lineNum">      71</span>              :     // Key helpers</span>
+<span id="L72"><span class="lineNum">      72</span> <span class="tlaGNC">           1 :     pub fn tx_msg_key_make(&amp;self, msg_id: &amp;str) -&gt; String {</span></span>
+<span id="L73"><span class="lineNum">      73</span> <span class="tlaGNC">           1 :         self.key(&quot;tm&quot;, msg_id)</span></span>
+<span id="L74"><span class="lineNum">      74</span>              :     }</span>
+<span id="L75"><span class="lineNum">      75</span>              : </span>
+<span id="L76"><span class="lineNum">      76</span> <span class="tlaUNC tlaBgUNC">           0 :     pub fn tx_msg_key_parse(&amp;self, key: &amp;str) -&gt; String {</span></span>
+<span id="L77"><span class="lineNum">      77</span> <span class="tlaUNC">           0 :         key.strip_prefix(&amp;format!(&quot;{}:tm:&quot;, self.db_prefix))</span></span>
+<span id="L78"><span class="lineNum">      78</span> <span class="tlaUNC">           0 :             .unwrap_or(key)</span></span>
+<span id="L79"><span class="lineNum">      79</span>              :             .to_string()</span>
+<span id="L80"><span class="lineNum">      80</span>              :     }</span>
+<span id="L81"><span class="lineNum">      81</span>              : </span>
+<span id="L82"><span class="lineNum">      82</span> <span class="tlaGNC tlaBgGNC">           1 :     pub fn tx_pact_key_make(&amp;self, msg_id: &amp;str) -&gt; String {</span></span>
+<span id="L83"><span class="lineNum">      83</span> <span class="tlaGNC">           1 :         self.key(&quot;tp&quot;, msg_id)</span></span>
+<span id="L84"><span class="lineNum">      84</span>              :     }</span>
+<span id="L85"><span class="lineNum">      85</span>              : </span>
+<span id="L86"><span class="lineNum">      86</span> <span class="tlaUNC tlaBgUNC">           0 :     pub fn tx_pact_key_parse(&amp;self, key: &amp;str) -&gt; String {</span></span>
+<span id="L87"><span class="lineNum">      87</span> <span class="tlaUNC">           0 :         key.strip_prefix(&amp;format!(&quot;{}:tp:&quot;, self.db_prefix))</span></span>
+<span id="L88"><span class="lineNum">      88</span> <span class="tlaUNC">           0 :             .unwrap_or(key)</span></span>
+<span id="L89"><span class="lineNum">      89</span>              :             .to_string()</span>
+<span id="L90"><span class="lineNum">      90</span>              :     }</span>
+<span id="L91"><span class="lineNum">      91</span>              : </span>
+<span id="L92"><span class="lineNum">      92</span> <span class="tlaGNC tlaBgGNC">           2 :     pub fn tx_event_key_prefix(&amp;self) -&gt; String {</span></span>
+<span id="L93"><span class="lineNum">      93</span> <span class="tlaGNC">           2 :         self.prefix(&quot;te&quot;)</span></span>
+<span id="L94"><span class="lineNum">      94</span>              :     }</span>
+<span id="L95"><span class="lineNum">      95</span>              : </span>
+<span id="L96"><span class="lineNum">      96</span> <span class="tlaGNC">           1 :     pub fn tx_event_key_make(&amp;self, msg_id: &amp;str, send_at_tick: u64) -&gt; String {</span></span>
+<span id="L97"><span class="lineNum">      97</span> <span class="tlaGNC">           1 :         format!(&quot;{}:te:{}:{}&quot;, self.db_prefix, send_at_tick, msg_id)</span></span>
+<span id="L98"><span class="lineNum">      98</span>              :     }</span>
+<span id="L99"><span class="lineNum">      99</span>              : </span>
+<span id="L100"><span class="lineNum">     100</span> <span class="tlaGNC">           2 :     pub fn tx_event_key_parse(&amp;self, send_event: &amp;str) -&gt; Result&lt;(u64, String), String&gt; {</span></span>
+<span id="L101"><span class="lineNum">     101</span> <span class="tlaGNC">           2 :         let prefix = self.tx_event_key_prefix();</span></span>
+<span id="L102"><span class="lineNum">     102</span> <span class="tlaGNC">           4 :         if !send_event.starts_with(&amp;prefix) {</span></span>
+<span id="L103"><span class="lineNum">     103</span> <span class="tlaUNC tlaBgUNC">           0 :             return Err(format!(</span></span>
+<span id="L104"><span class="lineNum">     104</span>              :                 &quot;Invalid send_event format: missing prefix '{}': {}&quot;,</span>
+<span id="L105"><span class="lineNum">     105</span>              :                 prefix, send_event</span>
+<span id="L106"><span class="lineNum">     106</span>              :             ));</span>
+<span id="L107"><span class="lineNum">     107</span>              :         }</span>
+<span id="L108"><span class="lineNum">     108</span> <span class="tlaGNC tlaBgGNC">           4 :         let rest = &amp;send_event[prefix.len()..];</span></span>
+<span id="L109"><span class="lineNum">     109</span> <span class="tlaGNC">           2 :         let mut parts = rest.splitn(2, ':');</span></span>
+<span id="L110"><span class="lineNum">     110</span> <span class="tlaGNC">           2 :         let tick_str = parts.next().ok_or_else(|| &quot;Missing tick&quot;.to_string())?;</span></span>
+<span id="L111"><span class="lineNum">     111</span> <span class="tlaGNC">           2 :         let msg_id = parts</span></span>
+<span id="L112"><span class="lineNum">     112</span>              :             .next()</span>
+<span id="L113"><span class="lineNum">     113</span> <span class="tlaGNC">           2 :             .ok_or_else(|| &quot;Missing msg_id&quot;.to_string())?</span></span>
+<span id="L114"><span class="lineNum">     114</span>              :             .to_string();</span>
+<span id="L115"><span class="lineNum">     115</span> <span class="tlaGNC">           2 :         let send_at_tick = tick_str</span></span>
+<span id="L116"><span class="lineNum">     116</span>              :             .parse::&lt;u64&gt;()</span>
+<span id="L117"><span class="lineNum">     117</span> <span class="tlaGNC">           2 :             .map_err(|e| format!(&quot;failed to parse tick: {}&quot;, e))?;</span></span>
+<span id="L118"><span class="lineNum">     118</span> <span class="tlaGNC">           2 :         Ok((send_at_tick, msg_id))</span></span>
+<span id="L119"><span class="lineNum">     119</span>              :     }</span>
+<span id="L120"><span class="lineNum">     120</span>              : </span>
+<span id="L121"><span class="lineNum">     121</span> <span class="tlaGNC">           2 :     pub fn rx_msg_key_make(&amp;self, msg_id: &amp;str) -&gt; String {</span></span>
+<span id="L122"><span class="lineNum">     122</span> <span class="tlaGNC">           2 :         self.key(&quot;rm&quot;, msg_id)</span></span>
+<span id="L123"><span class="lineNum">     123</span>              :     }</span>
+<span id="L124"><span class="lineNum">     124</span>              : </span>
+<span id="L125"><span class="lineNum">     125</span> <span class="tlaUNC tlaBgUNC">           0 :     pub fn rx_msg_key_parse(&amp;self, key: &amp;str) -&gt; String {</span></span>
+<span id="L126"><span class="lineNum">     126</span> <span class="tlaUNC">           0 :         key.strip_prefix(&amp;format!(&quot;{}:rm:&quot;, self.db_prefix))</span></span>
+<span id="L127"><span class="lineNum">     127</span> <span class="tlaUNC">           0 :             .unwrap_or(key)</span></span>
+<span id="L128"><span class="lineNum">     128</span>              :             .to_string()</span>
+<span id="L129"><span class="lineNum">     129</span>              :     }</span>
+<span id="L130"><span class="lineNum">     130</span>              : </span>
+<span id="L131"><span class="lineNum">     131</span> <span class="tlaGNC tlaBgGNC">           1 :     pub fn rx_receipt_key_prefix(&amp;self) -&gt; String {</span></span>
+<span id="L132"><span class="lineNum">     132</span> <span class="tlaGNC">           1 :         self.prefix(&quot;rr&quot;)</span></span>
+<span id="L133"><span class="lineNum">     133</span>              :     }</span>
+<span id="L134"><span class="lineNum">     134</span>              : </span>
+<span id="L135"><span class="lineNum">     135</span> <span class="tlaGNC">           2 :     pub fn rx_receipt_key_make(&amp;self, msg_id: &amp;str) -&gt; String {</span></span>
+<span id="L136"><span class="lineNum">     136</span> <span class="tlaGNC">           2 :         self.key(&quot;rr&quot;, msg_id)</span></span>
+<span id="L137"><span class="lineNum">     137</span>              :     }</span>
+<span id="L138"><span class="lineNum">     138</span>              : </span>
+<span id="L139"><span class="lineNum">     139</span> <span class="tlaUNC tlaBgUNC">           0 :     pub fn rx_receipt_key_parse(&amp;self, key: &amp;str) -&gt; String {</span></span>
+<span id="L140"><span class="lineNum">     140</span> <span class="tlaUNC">           0 :         key.strip_prefix(&amp;format!(&quot;{}:rr:&quot;, self.db_prefix))</span></span>
+<span id="L141"><span class="lineNum">     141</span> <span class="tlaUNC">           0 :             .unwrap_or(key)</span></span>
+<span id="L142"><span class="lineNum">     142</span>              :             .to_string()</span>
+<span id="L143"><span class="lineNum">     143</span>              :     }</span>
+<span id="L144"><span class="lineNum">     144</span>              : </span>
+<span id="L145"><span class="lineNum">     145</span>              :     // Generic get/put/del wrappers for each type</span>
+<span id="L146"><span class="lineNum">     146</span> <span class="tlaGNC tlaBgGNC">           1 :     pub fn rx_msg_get(&amp;self, dbtx: &amp;dyn DBTx, msg_id: &amp;str) -&gt; Result&lt;Option&lt;Msg&gt;, String&gt; {</span></span>
+<span id="L147"><span class="lineNum">     147</span> <span class="tlaGNC">           2 :         self.get_obj(dbtx, &amp;self.rx_msg_key_make(msg_id))</span></span>
+<span id="L148"><span class="lineNum">     148</span>              :     }</span>
+<span id="L149"><span class="lineNum">     149</span>              : </span>
+<span id="L150"><span class="lineNum">     150</span> <span class="tlaGNC">           2 :     pub fn rx_msg_put(&amp;self, dbtx: &amp;dyn DBTx, msg: &amp;Msg) -&gt; Result&lt;(), String&gt; {</span></span>
+<span id="L151"><span class="lineNum">     151</span> <span class="tlaGNC">           4 :         self.put_obj(dbtx, &amp;self.rx_msg_key_make(&amp;msg.id), msg)</span></span>
+<span id="L152"><span class="lineNum">     152</span>              :     }</span>
+<span id="L153"><span class="lineNum">     153</span>              : </span>
+<span id="L154"><span class="lineNum">     154</span> <span class="tlaUNC tlaBgUNC">           0 :     pub fn rx_msg_del(&amp;self, dbtx: &amp;dyn DBTx, msg_id: &amp;str) -&gt; Result&lt;Option&lt;Vec&lt;u8&gt;&gt;, String&gt; {</span></span>
+<span id="L155"><span class="lineNum">     155</span> <span class="tlaUNC">           0 :         self.del_obj(dbtx, &amp;self.rx_msg_key_make(msg_id))</span></span>
+<span id="L156"><span class="lineNum">     156</span>              :     }</span>
+<span id="L157"><span class="lineNum">     157</span>              : </span>
+<span id="L158"><span class="lineNum">     158</span> <span class="tlaGNC tlaBgGNC">           2 :     pub fn tx_msg_get(&amp;self, dbtx: &amp;dyn DBTx, msg_id: &amp;str) -&gt; Result&lt;Option&lt;Msg&gt;, String&gt; {</span></span>
+<span id="L159"><span class="lineNum">     159</span> <span class="tlaGNC">           4 :         self.get_obj(dbtx, &amp;self.tx_msg_key_make(msg_id))</span></span>
+<span id="L160"><span class="lineNum">     160</span>              :     }</span>
+<span id="L161"><span class="lineNum">     161</span>              : </span>
+<span id="L162"><span class="lineNum">     162</span> <span class="tlaGNC">           1 :     pub fn tx_msg_put(&amp;self, dbtx: &amp;dyn DBTx, msg: &amp;Msg) -&gt; Result&lt;(), String&gt; {</span></span>
+<span id="L163"><span class="lineNum">     163</span> <span class="tlaGNC">           2 :         self.put_obj(dbtx, &amp;self.tx_msg_key_make(&amp;msg.id), msg)</span></span>
+<span id="L164"><span class="lineNum">     164</span>              :     }</span>
+<span id="L165"><span class="lineNum">     165</span>              : </span>
+<span id="L166"><span class="lineNum">     166</span> <span class="tlaGNC">           1 :     pub fn tx_msg_del(&amp;self, dbtx: &amp;dyn DBTx, msg_id: &amp;str) -&gt; Result&lt;Option&lt;Vec&lt;u8&gt;&gt;, String&gt; {</span></span>
+<span id="L167"><span class="lineNum">     167</span> <span class="tlaGNC">           2 :         self.del_obj(dbtx, &amp;self.tx_msg_key_make(msg_id))</span></span>
+<span id="L168"><span class="lineNum">     168</span>              :     }</span>
+<span id="L169"><span class="lineNum">     169</span>              : </span>
+<span id="L170"><span class="lineNum">     170</span> <span class="tlaGNC">           2 :     pub fn tx_pact_get(&amp;self, dbtx: &amp;dyn DBTx, msg_id: &amp;str) -&gt; Result&lt;Option&lt;Pact&gt;, String&gt; {</span></span>
+<span id="L171"><span class="lineNum">     171</span> <span class="tlaGNC">           4 :         self.get_obj(dbtx, &amp;self.tx_pact_key_make(msg_id))</span></span>
+<span id="L172"><span class="lineNum">     172</span>              :     }</span>
+<span id="L173"><span class="lineNum">     173</span>              : </span>
+<span id="L174"><span class="lineNum">     174</span> <span class="tlaGNC">           1 :     pub fn tx_pact_put(&amp;self, dbtx: &amp;dyn DBTx, msg_id: &amp;str, pact: &amp;Pact) -&gt; Result&lt;(), String&gt; {</span></span>
+<span id="L175"><span class="lineNum">     175</span> <span class="tlaGNC">           2 :         self.put_obj(dbtx, &amp;self.tx_pact_key_make(msg_id), pact)</span></span>
+<span id="L176"><span class="lineNum">     176</span>              :     }</span>
+<span id="L177"><span class="lineNum">     177</span>              : </span>
+<span id="L178"><span class="lineNum">     178</span> <span class="tlaGNC">           1 :     pub fn tx_pact_del(&amp;self, dbtx: &amp;dyn DBTx, msg_id: &amp;str) -&gt; Result&lt;Option&lt;Vec&lt;u8&gt;&gt;, String&gt; {</span></span>
+<span id="L179"><span class="lineNum">     179</span> <span class="tlaGNC">           2 :         self.del_obj(dbtx, &amp;self.tx_pact_key_make(msg_id))</span></span>
+<span id="L180"><span class="lineNum">     180</span>              :     }</span>
+<span id="L181"><span class="lineNum">     181</span>              : </span>
+<span id="L182"><span class="lineNum">     182</span> <span class="tlaGNC">           2 :     pub fn tx_event_del(</span></span>
+<span id="L183"><span class="lineNum">     183</span>              :         &amp;self,</span>
+<span id="L184"><span class="lineNum">     184</span>              :         dbtx: &amp;dyn DBTx,</span>
+<span id="L185"><span class="lineNum">     185</span>              :         msg_id: &amp;str,</span>
+<span id="L186"><span class="lineNum">     186</span>              :         send_tick: u64,</span>
+<span id="L187"><span class="lineNum">     187</span>              :     ) -&gt; Result&lt;Option&lt;Vec&lt;u8&gt;&gt;, String&gt; {</span>
+<span id="L188"><span class="lineNum">     188</span> <span class="tlaGNC">           4 :         self.del_obj(dbtx, &amp;self.tx_event_key_make(msg_id, send_tick))</span></span>
+<span id="L189"><span class="lineNum">     189</span>              :     }</span>
+<span id="L190"><span class="lineNum">     190</span>              : </span>
+<span id="L191"><span class="lineNum">     191</span> <span class="tlaGNC">           1 :     pub fn tx_event_put(</span></span>
+<span id="L192"><span class="lineNum">     192</span>              :         &amp;self,</span>
+<span id="L193"><span class="lineNum">     193</span>              :         dbtx: &amp;dyn DBTx,</span>
+<span id="L194"><span class="lineNum">     194</span>              :         msg_id: &amp;str,</span>
+<span id="L195"><span class="lineNum">     195</span>              :         send_tick: u64,</span>
+<span id="L196"><span class="lineNum">     196</span>              :     ) -&gt; Result&lt;(), String&gt; {</span>
+<span id="L197"><span class="lineNum">     197</span> <span class="tlaGNC">           2 :         dbtx.obj_put(&amp;self.tx_event_key_make(msg_id, send_tick), vec![])</span></span>
+<span id="L198"><span class="lineNum">     198</span>              :     }</span>
+<span id="L199"><span class="lineNum">     199</span>              : </span>
+<span id="L200"><span class="lineNum">     200</span> <span class="tlaGNC">           2 :     pub fn rx_receipt_get(&amp;self, dbtx: &amp;dyn DBTx, msg_id: &amp;str) -&gt; Result&lt;Option&lt;Receipt&gt;, String&gt; {</span></span>
+<span id="L201"><span class="lineNum">     201</span> <span class="tlaGNC">           4 :         self.get_obj(dbtx, &amp;self.rx_receipt_key_make(msg_id))</span></span>
+<span id="L202"><span class="lineNum">     202</span>              :     }</span>
+<span id="L203"><span class="lineNum">     203</span>              : </span>
+<span id="L204"><span class="lineNum">     204</span> <span class="tlaGNC">           2 :     pub fn rx_receipt_put(</span></span>
+<span id="L205"><span class="lineNum">     205</span>              :         &amp;self,</span>
+<span id="L206"><span class="lineNum">     206</span>              :         dbtx: &amp;dyn DBTx,</span>
+<span id="L207"><span class="lineNum">     207</span>              :         msg_id: &amp;str,</span>
+<span id="L208"><span class="lineNum">     208</span>              :         receipt: &amp;Receipt,</span>
+<span id="L209"><span class="lineNum">     209</span>              :     ) -&gt; Result&lt;(), String&gt; {</span>
+<span id="L210"><span class="lineNum">     210</span> <span class="tlaGNC">           4 :         self.put_obj(dbtx, &amp;self.rx_receipt_key_make(msg_id), receipt)</span></span>
+<span id="L211"><span class="lineNum">     211</span>              :     }</span>
+<span id="L212"><span class="lineNum">     212</span>              : </span>
+<span id="L213"><span class="lineNum">     213</span> <span class="tlaUNC tlaBgUNC">           0 :     pub fn rx_receipt_del(&amp;self, dbtx: &amp;dyn DBTx, msg_id: &amp;str) -&gt; Result&lt;Option&lt;Vec&lt;u8&gt;&gt;, String&gt; {</span></span>
+<span id="L214"><span class="lineNum">     214</span> <span class="tlaUNC">           0 :         self.del_obj(dbtx, &amp;self.rx_receipt_key_make(msg_id))</span></span>
+<span id="L215"><span class="lineNum">     215</span>              :     }</span>
+<span id="L216"><span class="lineNum">     216</span>              : }</span>
+<span id="L217"><span class="lineNum">     217</span>              : pub struct Courier {</span>
+<span id="L218"><span class="lineNum">     218</span>              :     /// The core message delivery state machine for reliable, persistent, and retryable messaging.</span>
+<span id="L219"><span class="lineNum">     219</span>              :     ///</span>
+<span id="L220"><span class="lineNum">     220</span>              :     /// # Construction</span>
+<span id="L221"><span class="lineNum">     221</span>              :     /// To construct a [`Courier`], provide the following:</span>
+<span id="L222"><span class="lineNum">     222</span>              :     ///</span>
+<span id="L223"><span class="lineNum">     223</span>              :     /// - `db`: An implementation of [`courier::db::DB`] for message persistence.</span>
+<span id="L224"><span class="lineNum">     224</span>              :     /// - `sender`: An implementation of [`Tx`] to perform outbound message delivery.</span>
+<span id="L225"><span class="lineNum">     225</span>              :     /// - `handler`: A function or closure to handle inbound messages after receipt.</span>
+<span id="L226"><span class="lineNum">     226</span>              :     /// - `pact_factory`: A closure that produces an initial [`Pact`] for each message during [`Courier::tx`].</span>
+<span id="L227"><span class="lineNum">     227</span>              :     /// - `pact_ticker`: A closure that determines the retry schedule. It is called on each send attempt and returns `Ok(next_tick)` for the next retry, or `Err(reason)` to stop retrying. [`Courier`] will update `Pact.tick_of_last_attempt` automatically.</span>
+<span id="L228"><span class="lineNum">     228</span>              :     ///</span>
+<span id="L229"><span class="lineNum">     229</span>              :     /// This design enables flexible integration with custom storage, retry, and communication strategies.</span>
+<span id="L230"><span class="lineNum">     230</span>              :     id: String,</span>
+<span id="L231"><span class="lineNum">     231</span>              :     db: Arc&lt;dyn DB + Send + Sync&gt;,</span>
+<span id="L232"><span class="lineNum">     232</span>              :     dao: DAO,</span>
+<span id="L233"><span class="lineNum">     233</span>              :     pact_factory: Arc&lt;dyn Fn(&amp;Msg) -&gt; Pact + Send + Sync&gt;,</span>
+<span id="L234"><span class="lineNum">     234</span>              :     pact_ticker: Arc&lt;dyn Fn(&amp;mut Pact, u64) -&gt; Option&lt;u64&gt; + Send + Sync&gt;, // New pact_ticker field</span>
+<span id="L235"><span class="lineNum">     235</span>              :     keep_receipt: Arc&lt;dyn Fn(&amp;Receipt) -&gt; bool + Send + Sync&gt;,</span>
+<span id="L236"><span class="lineNum">     236</span>              :     sender: Arc&lt;dyn Tx + Send + Sync&gt;,</span>
+<span id="L237"><span class="lineNum">     237</span>              :     tick_last: AtomicU64,</span>
+<span id="L238"><span class="lineNum">     238</span>              : }</span>
+<span id="L239"><span class="lineNum">     239</span>              : </span>
+<span id="L240"><span class="lineNum">     240</span>              : impl Courier {</span>
+<span id="L241"><span class="lineNum">     241</span>              :     /// Public getter for DAO (for testing)</span>
+<span id="L242"><span class="lineNum">     242</span> <span class="tlaGNC tlaBgGNC">           1 :     pub fn dao(&amp;self) -&gt; &amp;DAO {</span></span>
+<span id="L243"><span class="lineNum">     243</span> <span class="tlaGNC">           1 :         &amp;self.dao</span></span>
+<span id="L244"><span class="lineNum">     244</span>              :     }</span>
+<span id="L245"><span class="lineNum">     245</span>              : }</span>
+<span id="L246"><span class="lineNum">     246</span>              : </span>
+<span id="L247"><span class="lineNum">     247</span>              : impl Courier {</span>
+<span id="L248"><span class="lineNum">     248</span> <span class="tlaGNC">           1 :     pub fn new(</span></span>
+<span id="L249"><span class="lineNum">     249</span>              :         id: String,</span>
+<span id="L250"><span class="lineNum">     250</span>              :         db: Arc&lt;dyn DB + Send + Sync&gt;,</span>
+<span id="L251"><span class="lineNum">     251</span>              :         db_prefix: String,</span>
+<span id="L252"><span class="lineNum">     252</span>              :         sender: Arc&lt;dyn Tx + Send + Sync&gt;,</span>
+<span id="L253"><span class="lineNum">     253</span>              :         pact_factory: Arc&lt;dyn Fn(&amp;Msg) -&gt; Pact + Send + Sync&gt;,</span>
+<span id="L254"><span class="lineNum">     254</span>              :         pact_ticker: Arc&lt;dyn Fn(&amp;mut Pact, u64) -&gt; Option&lt;u64&gt; + Send + Sync&gt;,</span>
+<span id="L255"><span class="lineNum">     255</span>              :         keep_receipt: Arc&lt;dyn Fn(&amp;Receipt) -&gt; bool + Send + Sync&gt;,</span>
+<span id="L256"><span class="lineNum">     256</span>              :     ) -&gt; Self {</span>
+<span id="L257"><span class="lineNum">     257</span>              :         Courier {</span>
+<span id="L258"><span class="lineNum">     258</span>              :             id,</span>
+<span id="L259"><span class="lineNum">     259</span>              :             db,</span>
+<span id="L260"><span class="lineNum">     260</span> <span class="tlaGNC">           1 :             dao: DAO::new(db_prefix),</span></span>
+<span id="L261"><span class="lineNum">     261</span>              :             sender,</span>
+<span id="L262"><span class="lineNum">     262</span>              :             pact_factory,</span>
+<span id="L263"><span class="lineNum">     263</span>              :             pact_ticker,</span>
+<span id="L264"><span class="lineNum">     264</span>              :             keep_receipt,</span>
+<span id="L265"><span class="lineNum">     265</span> <span class="tlaGNC">           2 :             tick_last: AtomicU64::new(0),</span></span>
+<span id="L266"><span class="lineNum">     266</span>              :         }</span>
+<span id="L267"><span class="lineNum">     267</span>              :     }</span>
+<span id="L268"><span class="lineNum">     268</span>              : </span>
+<span id="L269"><span class="lineNum">     269</span>              :     /// Advances the Courier state machine for a given logical tick.</span>
+<span id="L270"><span class="lineNum">     270</span>              :     ///</span>
+<span id="L271"><span class="lineNum">     271</span>              :     /// This method processes all scheduled send events whose tick is due, attempts message delivery,</span>
+<span id="L272"><span class="lineNum">     272</span>              :     /// manages retry scheduling, and expires receipts as needed. It is intended to be called periodically</span>
+<span id="L273"><span class="lineNum">     273</span>              :     /// (e.g., by a timer or event loop) to drive message delivery and cleanup.</span>
+<span id="L274"><span class="lineNum">     274</span>              :     ///</span>
+<span id="L275"><span class="lineNum">     275</span>              :     /// # Arguments</span>
+<span id="L276"><span class="lineNum">     276</span>              :     /// * `ctx` - Shared context for the operation (used for async message sending).</span>
+<span id="L277"><span class="lineNum">     277</span>              :     /// * `dbtx` - An open database transaction for all reads and writes.</span>
+<span id="L278"><span class="lineNum">     278</span>              :     /// * `tick` - The current logical tick (time step) for scheduling.</span>
+<span id="L279"><span class="lineNum">     279</span>              :     ///</span>
+<span id="L280"><span class="lineNum">     280</span>              :     /// # Returns</span>
+<span id="L281"><span class="lineNum">     281</span>              :     /// * `Ok(())` on success, or an error string if any operation fails.</span>
+<span id="L282"><span class="lineNum">     282</span>              :     ///</span>
+<span id="L283"><span class="lineNum">     283</span>              :     /// # Transaction Management</span>
+<span id="L284"><span class="lineNum">     284</span>              :     /// All database operations are performed within the provided transaction. The caller is responsible</span>
+<span id="L285"><span class="lineNum">     285</span>              :     /// for committing or rolling back the transaction as appropriate.</span>
+<span id="L286"><span class="lineNum">     286</span> <span class="tlaGNC">           2 :     pub async fn tick(</span></span>
+<span id="L287"><span class="lineNum">     287</span>              :         &amp;self,</span>
+<span id="L288"><span class="lineNum">     288</span>              :         ctx: Arc&lt;RwLock&lt;Context&gt;&gt;,</span>
+<span id="L289"><span class="lineNum">     289</span>              :         dbtx: &amp;dyn DBTx,</span>
+<span id="L290"><span class="lineNum">     290</span>              :         tick: u64,</span>
+<span id="L291"><span class="lineNum">     291</span>              :     ) -&gt; Result&lt;(), String&gt; {</span>
+<span id="L292"><span class="lineNum">     292</span> <span class="tlaGNC">           6 :         info!(&quot;Tick started.&quot;);</span></span>
+<span id="L293"><span class="lineNum">     293</span>              : </span>
+<span id="L294"><span class="lineNum">     294</span>              :         // handle send events</span>
+<span id="L295"><span class="lineNum">     295</span> <span class="tlaGNC">           6 :         let tx_event_keys = dbtx</span></span>
+<span id="L296"><span class="lineNum">     296</span> <span class="tlaGNC">           6 :             .seq_get(&amp;self.dao.tx_event_key_prefix())</span></span>
+<span id="L297"><span class="lineNum">     297</span> <span class="tlaGNC">           2 :             .inspect_err(|e| {</span></span>
+<span id="L298"><span class="lineNum">     298</span> <span class="tlaUNC tlaBgUNC">           0 :                 error!(&quot;failed to retrieve tick sequence: {}&quot;, e);</span></span>
+<span id="L299"><span class="lineNum">     299</span>              :             })?;</span>
+<span id="L300"><span class="lineNum">     300</span> <span class="tlaGNC tlaBgGNC">           6 :         for tx_event_key in tx_event_keys {</span></span>
+<span id="L301"><span class="lineNum">     301</span> <span class="tlaGNC">           6 :             info!(&quot;Scanning key: {}&quot;, tx_event_key); // Debugging log</span></span>
+<span id="L302"><span class="lineNum">     302</span>              : </span>
+<span id="L303"><span class="lineNum">     303</span>              :             // parse the tx_event_key</span>
+<span id="L304"><span class="lineNum">     304</span> <span class="tlaGNC">           4 :             let (send_tick, msg_id) = self.dao.tx_event_key_parse(&amp;tx_event_key)?;</span></span>
+<span id="L305"><span class="lineNum">     305</span>              : </span>
+<span id="L306"><span class="lineNum">     306</span>              :             // if send_tick &gt; tick, the send_event is in the future</span>
+<span id="L307"><span class="lineNum">     307</span> <span class="tlaGNC">           2 :             if send_tick &gt; tick {</span></span>
+<span id="L308"><span class="lineNum">     308</span>              :                 // we assume the scan happens in order, so we are done ticking</span>
+<span id="L309"><span class="lineNum">     309</span>              :                 break;</span>
+<span id="L310"><span class="lineNum">     310</span>              :             }</span>
+<span id="L311"><span class="lineNum">     311</span>              : </span>
+<span id="L312"><span class="lineNum">     312</span>              :             // delete the send_event from the tick sequence</span>
+<span id="L313"><span class="lineNum">     313</span> <span class="tlaGNC">           4 :             self.dao.tx_event_del(dbtx, &amp;msg_id, send_tick)?;</span></span>
+<span id="L314"><span class="lineNum">     314</span>              : </span>
+<span id="L315"><span class="lineNum">     315</span>              :             // retrieve the msg from the db</span>
+<span id="L316"><span class="lineNum">     316</span> <span class="tlaGNC">           2 :             let msg = match self.dao.tx_msg_get(dbtx, &amp;msg_id)? {</span></span>
+<span id="L317"><span class="lineNum">     317</span> <span class="tlaGNC">           2 :                 Some(msg) =&gt; msg,</span></span>
+<span id="L318"><span class="lineNum">     318</span>              :                 None =&gt; {</span>
+<span id="L319"><span class="lineNum">     319</span>              :                     // should never happen...</span>
+<span id="L320"><span class="lineNum">     320</span>              :                     // but what if our db allows a delete within this dbtx?</span>
+<span id="L321"><span class="lineNum">     321</span> <span class="tlaUNC tlaBgUNC">           0 :                     error!(&quot;msg_id {} deleted while processing send_event&quot;, msg_id);</span></span>
+<span id="L322"><span class="lineNum">     322</span>              :                     continue;</span>
+<span id="L323"><span class="lineNum">     323</span>              :                 }</span>
+<span id="L324"><span class="lineNum">     324</span>              :             };</span>
+<span id="L325"><span class="lineNum">     325</span>              : </span>
+<span id="L326"><span class="lineNum">     326</span>              :             // get the pact from the db</span>
+<span id="L327"><span class="lineNum">     327</span> <span class="tlaGNC tlaBgGNC">           4 :             let mut pact: Pact = match self.dao.tx_pact_get(dbtx, &amp;msg_id)? {</span></span>
+<span id="L328"><span class="lineNum">     328</span> <span class="tlaGNC">           2 :                 Some(pact) =&gt; pact,</span></span>
+<span id="L329"><span class="lineNum">     329</span>              :                 None =&gt; {</span>
+<span id="L330"><span class="lineNum">     330</span>              :                     // should never happen...</span>
+<span id="L331"><span class="lineNum">     331</span>              :                     // but what if our db allows a delete within this dbtx?</span>
+<span id="L332"><span class="lineNum">     332</span> <span class="tlaUNC tlaBgUNC">           0 :                     error!(</span></span>
+<span id="L333"><span class="lineNum">     333</span>              :                         &quot;pact for msg_id {} deleted while processing send_event&quot;,</span>
+<span id="L334"><span class="lineNum">     334</span>              :                         msg_id</span>
+<span id="L335"><span class="lineNum">     335</span>              :                     );</span>
+<span id="L336"><span class="lineNum">     336</span>              :                     continue;</span>
+<span id="L337"><span class="lineNum">     337</span>              :                 }</span>
+<span id="L338"><span class="lineNum">     338</span>              :             };</span>
+<span id="L339"><span class="lineNum">     339</span>              : </span>
+<span id="L340"><span class="lineNum">     340</span>              :             // should we schedule a next send_event?</span>
+<span id="L341"><span class="lineNum">     341</span> <span class="tlaGNC tlaBgGNC">           6 :             if let Some(next_send_tick) = (self.pact_ticker)(&amp;mut pact, tick) {</span></span>
+<span id="L342"><span class="lineNum">     342</span>              :                 // yes. save a new send event</span>
+<span id="L343"><span class="lineNum">     343</span> <span class="tlaGNC">           4 :                 self.dao.tx_event_put(dbtx, &amp;msg_id, next_send_tick)?;</span></span>
+<span id="L344"><span class="lineNum">     344</span>              : </span>
+<span id="L345"><span class="lineNum">     345</span>              :                 // update and save the pact</span>
+<span id="L346"><span class="lineNum">     346</span> <span class="tlaGNC">           2 :                 pact.tick_of_last_attempt = tick;</span></span>
+<span id="L347"><span class="lineNum">     347</span> <span class="tlaGNC">           2 :                 self.dao.tx_pact_put(dbtx, &amp;msg_id, &amp;pact)?;</span></span>
+<span id="L348"><span class="lineNum">     348</span>              :             } else {</span>
+<span id="L349"><span class="lineNum">     349</span>              :                 // no more retries</span>
+<span id="L350"><span class="lineNum">     350</span> <span class="tlaUNC tlaBgUNC">           0 :                 self.dao.tx_msg_del(dbtx, &amp;msg.id)?;</span></span>
+<span id="L351"><span class="lineNum">     351</span> <span class="tlaUNC">           0 :                 self.dao.tx_pact_del(dbtx, &amp;msg.id)?;</span></span>
+<span id="L352"><span class="lineNum">     352</span>              :             }</span>
+<span id="L353"><span class="lineNum">     353</span>              : </span>
+<span id="L354"><span class="lineNum">     354</span>              :             // send and await</span>
+<span id="L355"><span class="lineNum">     355</span> <span class="tlaGNC tlaBgGNC">           9 :             if let Err(e) = self.sender.tx(ctx.clone(), &amp;msg).await {</span></span>
+<span id="L356"><span class="lineNum">     356</span> <span class="tlaUNC tlaBgUNC">           0 :                 error!(&quot;failed to send message: {}&quot;, e);</span></span>
+<span id="L357"><span class="lineNum">     357</span>              :             }</span>
+<span id="L358"><span class="lineNum">     358</span>              :         }</span>
+<span id="L359"><span class="lineNum">     359</span>              : </span>
+<span id="L360"><span class="lineNum">     360</span>              :         // now expire receipts</span>
+<span id="L361"><span class="lineNum">     361</span> <span class="tlaGNC tlaBgGNC">           3 :         let rx_receipt_keys = dbtx</span></span>
+<span id="L362"><span class="lineNum">     362</span> <span class="tlaGNC">           3 :             .seq_get(&amp;self.dao.rx_receipt_key_prefix())</span></span>
+<span id="L363"><span class="lineNum">     363</span> <span class="tlaGNC">           2 :             .map_err(|e| format!(&quot;failed to retrieve tick sequence: {}&quot;, e))?;</span></span>
+<span id="L364"><span class="lineNum">     364</span>              : </span>
+<span id="L365"><span class="lineNum">     365</span> <span class="tlaGNC">           2 :         for rx_receipt_key in rx_receipt_keys {</span></span>
+<span id="L366"><span class="lineNum">     366</span> <span class="tlaUNC tlaBgUNC">           0 :             let msg_id = self.dao.rx_receipt_key_parse(&amp;rx_receipt_key);</span></span>
+<span id="L367"><span class="lineNum">     367</span> <span class="tlaUNC">           0 :             let mut rx_receipt = match self.dao.rx_receipt_get(dbtx, &amp;msg_id)? {</span></span>
+<span id="L368"><span class="lineNum">     368</span> <span class="tlaUNC">           0 :                 Some(r) =&gt; r,</span></span>
+<span id="L369"><span class="lineNum">     369</span>              :                 None =&gt; {</span>
+<span id="L370"><span class="lineNum">     370</span>              :                     // should never happen...</span>
+<span id="L371"><span class="lineNum">     371</span>              :                     // but what if our db allows a delete within this dbtx?</span>
+<span id="L372"><span class="lineNum">     372</span> <span class="tlaUNC">           0 :                     error!(</span></span>
+<span id="L373"><span class="lineNum">     373</span>              :                         &quot;receipt disappeared while iterating in tick {}&quot;,</span>
+<span id="L374"><span class="lineNum">     374</span>              :                         rx_receipt_key</span>
+<span id="L375"><span class="lineNum">     375</span>              :                     );</span>
+<span id="L376"><span class="lineNum">     376</span>              :                     continue;</span>
+<span id="L377"><span class="lineNum">     377</span>              :                 }</span>
+<span id="L378"><span class="lineNum">     378</span>              :             };</span>
+<span id="L379"><span class="lineNum">     379</span>              : </span>
+<span id="L380"><span class="lineNum">     380</span>              :             // let keep_receipt decide</span>
+<span id="L381"><span class="lineNum">     381</span> <span class="tlaUNC">           0 :             if (self.keep_receipt)(&amp;rx_receipt) {</span></span>
+<span id="L382"><span class="lineNum">     382</span> <span class="tlaUNC">           0 :                 rx_receipt.tick_acked_last = tick;</span></span>
+<span id="L383"><span class="lineNum">     383</span> <span class="tlaUNC">           0 :                 self.dao.rx_receipt_put(dbtx, &amp;msg_id, &amp;rx_receipt)?;</span></span>
+<span id="L384"><span class="lineNum">     384</span>              :             } else {</span>
+<span id="L385"><span class="lineNum">     385</span> <span class="tlaUNC">           0 :                 self.dao.rx_receipt_del(dbtx, &amp;msg_id)?;</span></span>
+<span id="L386"><span class="lineNum">     386</span>              :             }</span>
+<span id="L387"><span class="lineNum">     387</span>              :         }</span>
+<span id="L388"><span class="lineNum">     388</span>              : </span>
+<span id="L389"><span class="lineNum">     389</span> <span class="tlaGNC tlaBgGNC">           1 :         Ok(())</span></span>
+<span id="L390"><span class="lineNum">     390</span>              :     }</span>
+<span id="L391"><span class="lineNum">     391</span>              : }</span>
+<span id="L392"><span class="lineNum">     392</span>              : </span>
+<span id="L393"><span class="lineNum">     393</span>              : #[async_trait]</span>
+<span id="L394"><span class="lineNum">     394</span>              : impl Rx for Courier {</span>
+<span id="L395"><span class="lineNum">     395</span>              :     /// Handles inbound messages and manages their persistence and acknowledgment.</span>
+<span id="L396"><span class="lineNum">     396</span>              :     ///</span>
+<span id="L397"><span class="lineNum">     397</span>              :     /// This method is called when a message is received. It creates and commits a new database transaction</span>
+<span id="L398"><span class="lineNum">     398</span>              :     /// for each inbound message. If the message is an ACK, it deletes the corresponding outbound message and pact.</span>
+<span id="L399"><span class="lineNum">     399</span>              :     /// For standard messages, it stores the message and a receipt, or updates the receipt if already present.</span>
+<span id="L400"><span class="lineNum">     400</span>              :     /// An ACK is always sent in response to a standard message.</span>
+<span id="L401"><span class="lineNum">     401</span>              :     ///</span>
+<span id="L402"><span class="lineNum">     402</span>              :     /// # Arguments</span>
+<span id="L403"><span class="lineNum">     403</span>              :     /// * `ctx` - Shared context for the operation (used for async message sending).</span>
+<span id="L404"><span class="lineNum">     404</span>              :     /// * `msg` - The inbound message to process.</span>
+<span id="L405"><span class="lineNum">     405</span>              :     ///</span>
+<span id="L406"><span class="lineNum">     406</span>              :     /// # Returns</span>
+<span id="L407"><span class="lineNum">     407</span>              :     /// * `Ok(())` on success, or an error string if any operation fails.</span>
+<span id="L408"><span class="lineNum">     408</span>              :     ///</span>
+<span id="L409"><span class="lineNum">     409</span>              :     /// # Transaction Management</span>
+<span id="L410"><span class="lineNum">     410</span>              :     /// A new transaction is created and committed for each call.</span>
+<span id="L411"><span class="lineNum">     411</span> <span class="tlaGNC">           8 :     async fn rx(&amp;self, ctx: Arc&lt;RwLock&lt;Context&gt;&gt;, msg: &amp;Msg) -&gt; Result&lt;(), String&gt; {</span></span>
+<span id="L412"><span class="lineNum">     412</span> <span class="tlaGNC">           4 :         print!(&quot;rx&quot;);</span></span>
+<span id="L413"><span class="lineNum">     413</span>              : </span>
+<span id="L414"><span class="lineNum">     414</span> <span class="tlaGNC">           2 :         let dbtx_arc = self.db.dbtx_create().map_err(|e| e.to_string())?;</span></span>
+<span id="L415"><span class="lineNum">     415</span> <span class="tlaGNC">           4 :         let dbtx = dbtx_arc.as_ref();</span></span>
+<span id="L416"><span class="lineNum">     416</span>              : </span>
+<span id="L417"><span class="lineNum">     417</span>              :         // is the incoming message an ack?</span>
+<span id="L418"><span class="lineNum">     418</span> <span class="tlaGNC">           2 :         if msg.type_ == *MSG_ACK_TYPE {</span></span>
+<span id="L419"><span class="lineNum">     419</span> <span class="tlaGNC">           2 :             self.dao.tx_msg_del(dbtx, &amp;msg.body)?;</span></span>
+<span id="L420"><span class="lineNum">     420</span> <span class="tlaGNC">           1 :             self.dao.tx_pact_del(dbtx, &amp;msg.body)?;</span></span>
+<span id="L421"><span class="lineNum">     421</span>              :         } else {</span>
+<span id="L422"><span class="lineNum">     422</span>              :             // do we have a receipt for the inbound message?</span>
+<span id="L423"><span class="lineNum">     423</span> <span class="tlaGNC">           4 :             let rx_receipt_key = self.dao.rx_receipt_key_make(&amp;msg.id);</span></span>
+<span id="L424"><span class="lineNum">     424</span> <span class="tlaGNC">           4 :             if let Some(mut tx_receipt) = self.dao.rx_receipt_get(dbtx, &amp;rx_receipt_key)? {</span></span>
+<span id="L425"><span class="lineNum">     425</span>              :                 // yes. update receipt.tick_acked_last and re-save</span>
+<span id="L426"><span class="lineNum">     426</span> <span class="tlaUNC tlaBgUNC">           0 :                 tx_receipt.tick_acked_last = self.tick_last.load(Relaxed);</span></span>
+<span id="L427"><span class="lineNum">     427</span> <span class="tlaUNC">           0 :                 self.dao.rx_receipt_put(dbtx, &amp;msg.id, &amp;tx_receipt)?;</span></span>
+<span id="L428"><span class="lineNum">     428</span> <span class="tlaUNC">           0 :                 info!(&quot;Receipt updated for key: {}&quot;, rx_receipt_key);</span></span>
+<span id="L429"><span class="lineNum">     429</span>              :             } else {</span>
+<span id="L430"><span class="lineNum">     430</span>              :                 // save the inbound message for pickup later</span>
+<span id="L431"><span class="lineNum">     431</span> <span class="tlaGNC tlaBgGNC">           4 :                 self.dao.rx_msg_put(dbtx, &amp;msg)?;</span></span>
+<span id="L432"><span class="lineNum">     432</span>              : </span>
+<span id="L433"><span class="lineNum">     433</span>              :                 // save a receipt</span>
+<span id="L434"><span class="lineNum">     434</span>              :                 let receipt = Receipt {</span>
+<span id="L435"><span class="lineNum">     435</span> <span class="tlaGNC">           2 :                     tick_acked_first: self.tick_last.load(Relaxed),</span></span>
+<span id="L436"><span class="lineNum">     436</span> <span class="tlaGNC">           2 :                     tick_acked_last: self.tick_last.load(Relaxed),</span></span>
+<span id="L437"><span class="lineNum">     437</span>              :                 };</span>
+<span id="L438"><span class="lineNum">     438</span> <span class="tlaGNC">           2 :                 self.dao.rx_receipt_put(dbtx, &amp;msg.id, &amp;receipt)?;</span></span>
+<span id="L439"><span class="lineNum">     439</span>              : </span>
+<span id="L440"><span class="lineNum">     440</span> <span class="tlaGNC">           2 :                 info!(</span></span>
+<span id="L441"><span class="lineNum">     441</span>              :                     &quot;Message and receipt successfully stored for key: {}&quot;,</span>
+<span id="L442"><span class="lineNum">     442</span>              :                     &amp;msg.id</span>
+<span id="L443"><span class="lineNum">     443</span>              :                 );</span>
+<span id="L444"><span class="lineNum">     444</span>              :             }</span>
+<span id="L445"><span class="lineNum">     445</span>              :         }</span>
+<span id="L446"><span class="lineNum">     446</span>              : </span>
+<span id="L447"><span class="lineNum">     447</span>              :         // commit the tx (before sending the ack)</span>
+<span id="L448"><span class="lineNum">     448</span> <span class="tlaGNC">           4 :         dbtx.commit().map_err(|e| {</span></span>
+<span id="L449"><span class="lineNum">     449</span> <span class="tlaUNC tlaBgUNC">           0 :             error!(&quot;failed to commit rx transaction {}&quot;, e);</span></span>
+<span id="L450"><span class="lineNum">     450</span> <span class="tlaUNC">           0 :             e</span></span>
+<span id="L451"><span class="lineNum">     451</span>              :         })?;</span>
+<span id="L452"><span class="lineNum">     452</span>              : </span>
+<span id="L453"><span class="lineNum">     453</span> <span class="tlaGNC tlaBgGNC">           1 :         if msg.type_ != *MSG_ACK_TYPE {</span></span>
+<span id="L454"><span class="lineNum">     454</span>              :             // send an ack</span>
+<span id="L455"><span class="lineNum">     455</span>              :             let ack_msg = Msg {</span>
+<span id="L456"><span class="lineNum">     456</span> <span class="tlaGNC">           1 :                 id: uuid::Uuid::new_v4().to_string(),</span></span>
+<span id="L457"><span class="lineNum">     457</span> <span class="tlaGNC">           1 :                 from_id: self.id.clone(),</span></span>
+<span id="L458"><span class="lineNum">     458</span> <span class="tlaGNC">           2 :                 to_ids: vec![msg.from_id.clone()],</span></span>
+<span id="L459"><span class="lineNum">     459</span> <span class="tlaGNC">           2 :                 type_: MSG_ACK_TYPE.clone(),</span></span>
+<span id="L460"><span class="lineNum">     460</span> <span class="tlaGNC">           1 :                 body: msg.id.clone(),</span></span>
+<span id="L461"><span class="lineNum">     461</span>              :             };</span>
+<span id="L462"><span class="lineNum">     462</span>              : </span>
+<span id="L463"><span class="lineNum">     463</span>              :             // await the send and log errors</span>
+<span id="L464"><span class="lineNum">     464</span> <span class="tlaGNC">           2 :             let send_result = self.sender.tx(ctx, &amp;ack_msg).await;</span></span>
+<span id="L465"><span class="lineNum">     465</span> <span class="tlaGNC">           1 :             if let Err(e) = send_result {</span></span>
+<span id="L466"><span class="lineNum">     466</span> <span class="tlaUNC tlaBgUNC">           0 :                 error!(&quot;failed to send ack: {}&quot;, e);</span></span>
+<span id="L467"><span class="lineNum">     467</span>              :             }</span>
+<span id="L468"><span class="lineNum">     468</span>              :         }</span>
+<span id="L469"><span class="lineNum">     469</span>              : </span>
+<span id="L470"><span class="lineNum">     470</span> <span class="tlaGNC tlaBgGNC">           1 :         Ok(())</span></span>
+<span id="L471"><span class="lineNum">     471</span>              :     }</span>
+<span id="L472"><span class="lineNum">     472</span>              : }</span>
+<span id="L473"><span class="lineNum">     473</span>              : </span>
+<span id="L474"><span class="lineNum">     474</span>              : #[async_trait]</span>
+<span id="L475"><span class="lineNum">     475</span>              : impl Tx for Courier {</span>
+<span id="L476"><span class="lineNum">     476</span>              :     /// Schedules a message for delivery and persists its state.</span>
+<span id="L477"><span class="lineNum">     477</span>              :     ///</span>
+<span id="L478"><span class="lineNum">     478</span>              :     /// This method is called to send a message. It writes the message and its initial pact to the database,</span>
+<span id="L479"><span class="lineNum">     479</span>              :     /// and schedules an event for immediate delivery. All operations are performed within the provided transaction.</span>
+<span id="L480"><span class="lineNum">     480</span>              :     /// The transaction is not committed here; the caller is responsible for committing or rolling back as needed.</span>
+<span id="L481"><span class="lineNum">     481</span>              :     ///</span>
+<span id="L482"><span class="lineNum">     482</span>              :     /// # Arguments</span>
+<span id="L483"><span class="lineNum">     483</span>              :     /// * `ctx` - Shared context for the operation (must contain a valid database transaction).</span>
+<span id="L484"><span class="lineNum">     484</span>              :     /// * `msg` - The message to send.</span>
+<span id="L485"><span class="lineNum">     485</span>              :     ///</span>
+<span id="L486"><span class="lineNum">     486</span>              :     /// # Returns</span>
+<span id="L487"><span class="lineNum">     487</span>              :     /// * `Ok(())` on success, or an error string if any operation fails.</span>
+<span id="L488"><span class="lineNum">     488</span>              :     ///</span>
+<span id="L489"><span class="lineNum">     489</span>              :     /// # Transaction Management</span>
+<span id="L490"><span class="lineNum">     490</span>              :     /// All database operations are performed within the transaction from the context.</span>
+<span id="L491"><span class="lineNum">     491</span> <span class="tlaGNC">           4 :     async fn tx(&amp;self, ctx: Arc&lt;RwLock&lt;Context&gt;&gt;, msg: &amp;Msg) -&gt; Result&lt;(), String&gt; {</span></span>
+<span id="L492"><span class="lineNum">     492</span>              :         // Retrieve dbtx from context</span>
+<span id="L493"><span class="lineNum">     493</span> <span class="tlaGNC">           2 :         let ctx_guard = ctx.read().unwrap();</span></span>
+<span id="L494"><span class="lineNum">     494</span> <span class="tlaGNC">           2 :         let dbtx = dbtx_from_ctx(&amp;ctx_guard).unwrap();</span></span>
+<span id="L495"><span class="lineNum">     495</span> <span class="tlaGNC">           2 :         let dbtx = dbtx.as_ref();</span></span>
+<span id="L496"><span class="lineNum">     496</span>              : </span>
+<span id="L497"><span class="lineNum">     497</span>              :         // save the message to the db</span>
+<span id="L498"><span class="lineNum">     498</span> <span class="tlaGNC">           1 :         self.dao.tx_msg_put(dbtx, &amp;msg)?;</span></span>
+<span id="L499"><span class="lineNum">     499</span>              : </span>
+<span id="L500"><span class="lineNum">     500</span>              :         // save a pact</span>
+<span id="L501"><span class="lineNum">     501</span> <span class="tlaGNC">           1 :         let pact = (self.pact_factory)(msg);</span></span>
+<span id="L502"><span class="lineNum">     502</span> <span class="tlaGNC">           1 :         self.dao.tx_pact_put(dbtx, &amp;msg.id, &amp;pact)?;</span></span>
+<span id="L503"><span class="lineNum">     503</span>              : </span>
+<span id="L504"><span class="lineNum">     504</span>              :         // schedule an event to send asap</span>
+<span id="L505"><span class="lineNum">     505</span> <span class="tlaGNC">           1 :         self.dao.tx_event_put(dbtx, &amp;msg.id, 0)?;</span></span>
+<span id="L506"><span class="lineNum">     506</span>              : </span>
+<span id="L507"><span class="lineNum">     507</span> <span class="tlaGNC">           1 :         Ok(())</span></span>
+<span id="L508"><span class="lineNum">     508</span>              :     }</span>
+<span id="L509"><span class="lineNum">     509</span>              : }</span>
+<span id="L510"><span class="lineNum">     510</span>              : </span>
+<span id="L511"><span class="lineNum">     511</span>              : // Manually implement Debug for Courier</span>
+<span id="L512"><span class="lineNum">     512</span>              : impl std::fmt::Debug for Courier {</span>
+<span id="L513"><span class="lineNum">     513</span> <span class="tlaUNC tlaBgUNC">           0 :     fn fmt(&amp;self, f: &amp;mut std::fmt::Formatter&lt;'_&gt;) -&gt; std::fmt::Result {</span></span>
+<span id="L514"><span class="lineNum">     514</span> <span class="tlaUNC">           0 :         f.debug_struct(&quot;Courier&quot;)</span></span>
+<span id="L515"><span class="lineNum">     515</span> <span class="tlaUNC">           0 :             .field(&quot;db&quot;, &amp;&quot;&lt;DB trait object&gt;&quot;)</span></span>
+<span id="L516"><span class="lineNum">     516</span> <span class="tlaUNC">           0 :             .field(&quot;comm&quot;, &amp;&quot;&lt;Comm trait object&gt;&quot;)</span></span>
+<span id="L517"><span class="lineNum">     517</span>              :             .finish()</span>
+<span id="L518"><span class="lineNum">     518</span>              :     }</span>
+<span id="L519"><span class="lineNum">     519</span>              : }</span>
+        </pre>
+              </td>
+            </tr>
+          </table>
+          <br>
+
+          <table width="100%" border=0 cellspacing=0 cellpadding=0>
+            <tr><td class="ruler"><img src="../../glass.png" width=3 height=3 alt=""></td></tr>
+            <tr><td class="versionInfo">Generated by: <a href="https://github.com//linux-test-project/lcov" target="_parent">LCOV version 2.0-1</a></td></tr>
+          </table>
+          <br>
+
+</body>
+</html>

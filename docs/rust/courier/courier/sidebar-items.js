@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["Courier","DAO","MSG_ACK_TYPE","MSG_TYPE_COMMAND","MSG_TYPE_EVENT","MSG_TYPE_TEXT"]};
