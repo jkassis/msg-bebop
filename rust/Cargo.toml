@@ -1,0 +1,20 @@
+[package]
+name = "msg-bebop"
+version = "0.1.0"
+edition = "2021"
+authors = ["Your Name <your.email@example.com>"]
+description = "High-performance message serialization using Bebop"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jkassis/msg-bebop"
+keywords = ["serialization", "bebop", "messaging", "performance"]
+categories = ["encoding", "network-programming"]
+
+[dependencies]
+bebop = "2.8"
+
+[dev-dependencies]
+serde_json = "1.0"
+
+[[example]]
+name = "basic_usage"
+path = "examples/basic_usage.rs"

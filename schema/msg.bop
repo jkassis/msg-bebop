@@ -1,0 +1,10 @@
+// msg.bop - Bebop schema for cross-language message serialization
+
+// High-performance message structure for polyglot applications
+struct Msg {
+  string body;      // The actual message payload
+  string fromId;    // Sender ID
+  string id;        // ID for idempotency
+  string[] toIds;   // Array of recipient IDs
+  string type;      // Type of the message
+}
