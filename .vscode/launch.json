@@ -1,0 +1,24 @@
+// .vscode/launch.json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch Go",
+      "type": "go",
+      "request": "launch",
+      "mode": "auto",
+      "program": "${workspaceFolder}/golang/cmd"
+    },
+    {
+      "name": "Debug Courier",
+      "type": "lldb",
+      "request": "launch",
+      "program": "${workspaceFolder}/rust/build/debug/courier",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "sourceLanguages": [
+        "rust"
+      ]
+    },
+  ]
+}

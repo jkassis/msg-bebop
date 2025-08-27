@@ -1,0 +1,14 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "shell",
+      "label": "Test Courier Methods",
+      "command": "cargo test",
+      "problemMatcher": [
+        "$rustc"
+      ],
+      "group": "test"
+    },
+  ]
+}

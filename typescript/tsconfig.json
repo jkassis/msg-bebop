@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "ESNext", // Continue using ES modules
+    "moduleResolution": "Node",
+    "target": "ES2020",
+    "baseUrl": ".",
+    "esModuleInterop": true, // Ensure compatibility with ES modules
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "outDir": "build" // Adjust if needed
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "jest.config.ts"
+  ]
+}
