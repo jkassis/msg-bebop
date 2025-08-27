@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net6.0</TargetFramework>
+    <PackageId>Msg.Bebop</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Your Name</Authors>
+    <Description>High-performance message serialization using Bebop for .NET</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/jkassis/msg-bebop</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/jkassis/msg-bebop</RepositoryUrl>
+    <PackageTags>serialization bebop messaging performance dotnet</PackageTags>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="bebop" Version="2.8.3" />
+  </ItemGroup>
+
+</Project>
