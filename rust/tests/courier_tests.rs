@@ -6,8 +6,7 @@ mod courier_tests {
         db_sled::SledDB,
         pact::Pact,
         receipt::Receipt,
-        tx_sync::SyncTx,
-        txrx::*,
+        rustie::msg::{tx_sync::SyncTx, txrx::*},
         Courier, Msg,
     };
     use std::sync::{Arc, RwLock};

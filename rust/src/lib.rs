@@ -6,19 +6,23 @@ pub mod courier;
 pub mod db;
 pub mod db_sled;
 mod db_sled_tests;
-pub mod msg;
+pub mod rustie {
+    pub mod msg {
+        pub mod msg;
+        pub mod tx_sync;
+        pub mod txrx;
+    }
+}
 pub mod pact;
 pub mod receipt;
-pub mod txrx;
-pub mod tx_sync;
 
 pub use context::*;
 pub use courier::*;
 pub use db::*;
 pub use db_sled::*;
-pub use msg::*;
 pub use pact::*;
-pub use txrx::*;
+pub use rustie::msg::msg::*;
+pub use rustie::msg::txrx::*;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

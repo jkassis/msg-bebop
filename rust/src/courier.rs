@@ -1,10 +1,12 @@
 use crate::context::Context;
 use crate::{
     db::{dbtx_from_ctx, DBTx, DB},
-    msg::Msg,
     pact::Pact,
     receipt::Receipt,
-    txrx::{Rx, Tx},
+    rustie::{
+        msg::msg::Msg,
+        msg::txrx::{Rx, Tx},
+    },
 };
 use async_trait::async_trait;
 use lazy_static::lazy_static;
