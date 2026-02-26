@@ -21,11 +21,11 @@ go_cmd() {
     case "$mode" in
     debug)
       echo "→ Building Go (debug)..."
-      go build -o "$go_out" "$go_main"
+      env -u GOROOT go build -o "$go_out" "$go_main"
       ;;
     release)
       echo "→ Building Go (release)..."
-      go build -ldflags="-s -w" -o "$go_out" "$go_main"
+      env -u GOROOT go build -ldflags="-s -w" -o "$go_out" "$go_main"
       ;;
     *)
       echo "✘ Unknown build mode: '$mode' (expected 'debug' or 'release')"
@@ -47,7 +47,7 @@ go_cmd() {
 
   test)
     echo "→ Running Go tests..."
-    (cd golang/src && go test ./... ../tests "$@")
+    (cd golang/src && env -u GOROOT go test ./... ../tests "$@")
     ;;
 
   coverage)
@@ -61,7 +61,7 @@ go_cmd() {
     mkdir -p "$go_build"
 
     # Run tests with coverage
-    (cd "$go_src" && go test ./... -coverprofile=../../"$cover_file" -covermode=atomic)
+    (cd "$go_src" && env -u GOROOT go test ./... -coverprofile=../../"$cover_file" -covermode=atomic)
 
     # Convert to LCOV for VSCode or unified tools
     if command -v gocov >/dev/null && command -v gocov-xml >/dev/null; then
@@ -246,6 +246,13 @@ all_cmd() {
       failed=1
     fi
 
+    echo ""
+    echo "🧪 Cross-language interop e2e:"
+    if ! interop_cmd test "$@"; then
+      echo "❌ Interop e2e test failed"
+      failed=1
+    fi
+
     if [[ "$failed" -ne 0 ]]; then
       echo ""
       echo "❌ One or more test suites failed."
@@ -374,7 +381,7 @@ all_cmd() {
 
     # Go
     if [[ -f golang/build/coverage.out ]]; then
-      go_pct=$(go tool cover -func=golang/build/coverage.out | grep total: | awk '{print $3}' | tr -d '%')
+      go_pct=$(env -u GOROOT go tool cover -func=golang/build/coverage.out | grep total: | awk '{print $3}' | tr -d '%')
       printf "│ %-13s │ %5s%%     │\n" "Go" "$go_pct"
     fi
 
@@ -396,6 +403,21 @@ all_cmd() {
   esac
 }
 
+interop_cmd() {
+  local subcommand="${1:-}"
+  shift || true
+
+  case "$subcommand" in
+  test)
+    echo "→ Running go->ts->rust interop e2e..."
+    ./conformance/e2e/test_go_ts_rust.sh "$@"
+    ;;
+  *)
+    echo "✘ Unknown subcommand for 'interop': '$subcommand'"
+    ;;
+  esac
+}
+
 main() {
   local target="${1:-}"
   shift || true
@@ -404,9 +426,10 @@ main() {
   go) go_cmd "$@" ;;
   rust) rust_cmd "$@" ;;
   ts | typescript) ts_cmd "$@" ;;
+  interop) interop_cmd "$@" ;;
   all) all_cmd "$@" ;;
   *)
-    echo "Usage: $0 {go|rust|ts|all} <subcommand>"
+    echo "Usage: $0 {go|rust|ts|interop|all} <subcommand>"
     echo "Example: $0 rust build"
     exit 1
     ;;

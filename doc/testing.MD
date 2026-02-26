@@ -17,6 +17,7 @@ Current cross-language coverage:
 - Message decode parity: missing `version` defaults to `1`.
 - Tx validation parity: reject invalid `version=0`; reject non-ACK payloads containing ACK correlation fields.
 - ACK apply parity: validate ACK correlation fields and apply recipient-list shrinking semantics.
+- Network interop e2e: `go -> typescript -> rust` over TCP using shared `Msg` JSON envelope.
 
 Runners:
 
@@ -30,3 +31,5 @@ Execution commands:
 2. `cd golang/src && go test ./...`
 3. `cd golang/tests && go test ./...`
 4. `cd typescript && npm test`
+5. `./conformance/e2e/test_go_ts_rust.sh`
+6. `./make.sh interop test`
