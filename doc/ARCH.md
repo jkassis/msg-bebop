@@ -440,6 +440,47 @@ Courier supports message versioning with minimal overhead via the `Msg.version` 
 
 ## Usage Warnings
 
+### Embedder-Managed Ordering Pattern
+
+Courier does not enforce ordering. If you need per-entity order, carry ordering metadata in `Msg.body` (or app-level headers) and enforce order at the receiver.
+
+Recommended per-key model:
+
+1. Sender includes `(stream_id, seq)` where `seq` is monotonic per `stream_id`.
+2. Receiver keeps `last_applied_seq[stream_id]`.
+3. Receiver accepts only `seq == last_applied_seq + 1`.
+4. Receiver buffers future messages (`seq > last_applied_seq + 1`) with TTL/size bounds.
+5. Receiver drops duplicates/stale messages (`seq <= last_applied_seq`) and still ACKs them.
+
+Example envelope payload (app-defined):
+
+```json
+{
+  "stream_id": "acct:1234",
+  "seq": 42,
+  "event": "debit_applied",
+  "amount": 100
+}
+```
+
+Receiver pseudocode:
+
+```text
+if seq <= last_applied_seq(stream_id):
+    ack + drop (duplicate/stale)
+elif seq == last_applied_seq(stream_id) + 1:
+    apply + advance watermark + drain contiguous buffered items
+else:
+    buffer with bounds (max_gap, max_items, ttl)
+```
+
+Operational guardrails:
+
+- Bound buffer memory (`max_items_per_stream`, global cap).
+- Expire long gaps to DLQ for operator review.
+- Keep idempotency horizon larger than worst-case reorder + retry horizon.
+- Use per-stream locks or single-threaded executors to avoid watermark races.
+
 ### Tick Advancement and Burst
 
 It is valid for the embedding application to call `tick(10)` and then `tick(1000)`. If ticks represent real-time milliseconds, this happens naturally (e.g., the app was busy for a second). All messages due in ticks 0–1000 will fire in that single `tick(1000)` call.
@@ -479,9 +520,9 @@ System designers must size these parameters to satisfy their SLAs. Courier provi
 | Transport (Tx/Rx) | SyncTx only | Not started | Not started |
 | Integration tests | Done | Scaffold | Scaffold |
 | Network transport | Not started | Not started | Not started |
-| Idempotency strategy | Receipt built-in, pluggable interface TODO | Not started | Not started |
-| Expiration hook | Not started | Not started | Not started |
-| Observability recorder interface | Not started | Not started | Not started |
+| Idempotency strategy | Receipt built-in + pluggable interface | Not started | Not started |
+| Expiration hook | Done (no-op + DLQ reference hook) | Not started | Not started |
+| Observability recorder interface | Done (no-op + event surface) | Not started | Not started |
 | Conformance suite (cross-language) | Not started | Not started | Not started |
 
 ---
