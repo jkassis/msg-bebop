@@ -542,4 +542,140 @@ mod courier_tests {
         assert_eq!(dlq_envelope.msg.id, outbound.id);
         assert_eq!(dlq_envelope.expired_at_tick, 10);
     }
+
+    #[tokio::test]
+    async fn test_ack_rejects_missing_correlation_fields() {
+        let db_path = "/tmp/test_ack_missing_fields_db";
+        std::fs::remove_dir_all(db_path).ok();
+        let db: Arc<dyn DB + Send + Sync> =
+            Arc::new(SledDB::new(db_path).expect("Failed to initialize DbSled"));
+
+        let pact_factory = Arc::new(|_: &Msg| Pact {
+            tick_of_last_attempt: 0,
+            try_count: 0,
+        });
+        let pact_ticker = Arc::new(|pact: &mut Pact, tick: u64| -> Option<u64> {
+            pact.try_count += 1;
+            Some(tick + 1)
+        });
+        let idempotency_strategy = Arc::new(ReceiptIdempotencyStrategy::new(Arc::new(
+            |_receipt: &Receipt| true,
+        )));
+        let recorder = Arc::new(NoopObservabilityRecorder);
+        let sender = Arc::new(SyncTx::new());
+        let courier = Arc::new(Courier::new(
+            "tx".to_string(),
+            db.clone(),
+            "tx".to_string(),
+            sender,
+            pact_factory,
+            pact_ticker,
+            idempotency_strategy,
+            recorder,
+        ));
+
+        let outbound = Msg {
+            body: "body".to_string(),
+            from_id: "origin".to_string(),
+            id: "msg-missing-ack-fields".to_string(),
+            to_ids: vec!["recipient_a".to_string()],
+            type_: "text".to_string(),
+            version: 1,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
+        };
+        let tx = db.dbtx_create().expect("dbtx_create");
+        let mut ctx = Context::new();
+        let ctx = dbtx_to_ctx(&mut ctx, tx.clone());
+        courier.tx(ctx, &outbound).await.expect("tx outbound");
+        tx.commit().expect("commit outbound");
+
+        let bad_ack = Msg {
+            body: outbound.id.clone(),
+            from_id: "recipient_a".to_string(),
+            id: "ack-missing-fields".to_string(),
+            to_ids: vec!["tx".to_string()],
+            type_: "Ack".to_string(),
+            version: 1,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
+        };
+        let err = courier
+            .rx(Arc::new(RwLock::new(Context::new())), &bad_ack)
+            .await
+            .expect_err("ack should be rejected");
+        assert!(err.contains("missing ack_msg_id"));
+    }
+
+    #[tokio::test]
+    async fn test_ack_rejects_version_mismatch() {
+        let db_path = "/tmp/test_ack_version_mismatch_db";
+        std::fs::remove_dir_all(db_path).ok();
+        let db: Arc<dyn DB + Send + Sync> =
+            Arc::new(SledDB::new(db_path).expect("Failed to initialize DbSled"));
+
+        let pact_factory = Arc::new(|_: &Msg| Pact {
+            tick_of_last_attempt: 0,
+            try_count: 0,
+        });
+        let pact_ticker = Arc::new(|pact: &mut Pact, tick: u64| -> Option<u64> {
+            pact.try_count += 1;
+            Some(tick + 1)
+        });
+        let idempotency_strategy = Arc::new(ReceiptIdempotencyStrategy::new(Arc::new(
+            |_receipt: &Receipt| true,
+        )));
+        let recorder = Arc::new(NoopObservabilityRecorder);
+        let sender = Arc::new(SyncTx::new());
+        let courier = Arc::new(Courier::new(
+            "tx".to_string(),
+            db.clone(),
+            "tx".to_string(),
+            sender,
+            pact_factory,
+            pact_ticker,
+            idempotency_strategy,
+            recorder,
+        ));
+
+        let outbound = Msg {
+            body: "body".to_string(),
+            from_id: "origin".to_string(),
+            id: "msg-ack-version-mismatch".to_string(),
+            to_ids: vec!["recipient_a".to_string()],
+            type_: "text".to_string(),
+            version: 2,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
+        };
+        let tx = db.dbtx_create().expect("dbtx_create");
+        let mut ctx = Context::new();
+        let ctx = dbtx_to_ctx(&mut ctx, tx.clone());
+        courier.tx(ctx, &outbound).await.expect("tx outbound");
+        tx.commit().expect("commit outbound");
+
+        let bad_ack = Msg {
+            body: outbound.id.clone(),
+            from_id: "recipient_a".to_string(),
+            id: "ack-version-mismatch".to_string(),
+            to_ids: vec!["tx".to_string()],
+            type_: "Ack".to_string(),
+            version: 1,
+            ack_msg_id: Some(outbound.id.clone()),
+            ack_from_id: Some("recipient_a".to_string()),
+            ack_to_id: Some("tx".to_string()),
+            ack_version: Some(1),
+        };
+        let err = courier
+            .rx(Arc::new(RwLock::new(Context::new())), &bad_ack)
+            .await
+            .expect_err("ack should be rejected");
+        assert!(err.contains("ack_version"));
+    }
 }
