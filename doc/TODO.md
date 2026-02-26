@@ -15,7 +15,7 @@
 ### P1
 
 - [x] Add expiration hook support and provide a DLQ-oriented reference implementation.
-- [ ] Add retry/idempotency guardrails, including ACK-path correctness checks and receipt strategy validation (`keep_receipt >= max_retry_horizon` when statically knowable).
+- [ ] Add retry/idempotency guardrails, including ACK-path correctness checks and receipt strategy validation (`keep_receipt >= max_retry_horizon` when statically knowable). (Rust done; Go/TS pending)
 - [ ] Define typed error categories (`retryable`, `terminal`, `caller_bug`) consistently across Rust/Go/TS.
 - [ ] Add docs and examples for embedder-managed ordering (custom ordering fields + receiver-side ordered queueing).
 

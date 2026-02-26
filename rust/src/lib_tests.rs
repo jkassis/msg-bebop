@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use crate::validate_receipt_horizon;
     use crate::Msg;
     use crate::Pact;
 
@@ -42,5 +43,12 @@ mod tests {
         let serialized = serde_json::to_string(&pact).unwrap();
         let deserialized: Pact = serde_json::from_str(&serialized).unwrap();
         assert_eq!(pact, deserialized);
+    }
+
+    #[tokio::test]
+    async fn test_receipt_horizon_guardrail() {
+        assert!(validate_receipt_horizon(100, 50).is_ok());
+        assert!(validate_receipt_horizon(50, 50).is_ok());
+        assert!(validate_receipt_horizon(49, 50).is_err());
     }
 }

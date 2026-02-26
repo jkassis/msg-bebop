@@ -678,4 +678,110 @@ mod courier_tests {
             .expect_err("ack should be rejected");
         assert!(err.contains("ack_version"));
     }
+
+    #[tokio::test]
+    async fn test_tx_rejects_non_ack_with_ack_fields() {
+        let db_path = "/tmp/test_tx_invalid_non_ack_fields_db";
+        std::fs::remove_dir_all(db_path).ok();
+        let db: Arc<dyn DB + Send + Sync> =
+            Arc::new(SledDB::new(db_path).expect("Failed to initialize DbSled"));
+
+        let pact_factory = Arc::new(|_: &Msg| Pact {
+            tick_of_last_attempt: 0,
+            try_count: 0,
+        });
+        let pact_ticker = Arc::new(|pact: &mut Pact, tick: u64| -> Option<u64> {
+            pact.try_count += 1;
+            Some(tick + 1)
+        });
+        let idempotency_strategy = Arc::new(ReceiptIdempotencyStrategy::new(Arc::new(
+            |_receipt: &Receipt| true,
+        )));
+        let recorder = Arc::new(NoopObservabilityRecorder);
+        let sender = Arc::new(SyncTx::new());
+        let courier = Arc::new(Courier::new(
+            "tx".to_string(),
+            db.clone(),
+            "tx".to_string(),
+            sender,
+            pact_factory,
+            pact_ticker,
+            idempotency_strategy,
+            recorder,
+        ));
+
+        let invalid_msg = Msg {
+            body: "body".to_string(),
+            from_id: "origin".to_string(),
+            id: "msg-invalid-non-ack".to_string(),
+            to_ids: vec!["recipient_a".to_string()],
+            type_: "text".to_string(),
+            version: 1,
+            ack_msg_id: Some("other".to_string()),
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
+        };
+        let tx = db.dbtx_create().expect("dbtx_create");
+        let mut ctx = Context::new();
+        let ctx = dbtx_to_ctx(&mut ctx, tx.clone());
+        let err = courier
+            .tx(ctx, &invalid_msg)
+            .await
+            .expect_err("tx should reject malformed non-ack");
+        assert!(err.contains("non-ack message"));
+    }
+
+    #[tokio::test]
+    async fn test_tx_rejects_zero_version() {
+        let db_path = "/tmp/test_tx_zero_version_db";
+        std::fs::remove_dir_all(db_path).ok();
+        let db: Arc<dyn DB + Send + Sync> =
+            Arc::new(SledDB::new(db_path).expect("Failed to initialize DbSled"));
+
+        let pact_factory = Arc::new(|_: &Msg| Pact {
+            tick_of_last_attempt: 0,
+            try_count: 0,
+        });
+        let pact_ticker = Arc::new(|pact: &mut Pact, tick: u64| -> Option<u64> {
+            pact.try_count += 1;
+            Some(tick + 1)
+        });
+        let idempotency_strategy = Arc::new(ReceiptIdempotencyStrategy::new(Arc::new(
+            |_receipt: &Receipt| true,
+        )));
+        let recorder = Arc::new(NoopObservabilityRecorder);
+        let sender = Arc::new(SyncTx::new());
+        let courier = Arc::new(Courier::new(
+            "tx".to_string(),
+            db.clone(),
+            "tx".to_string(),
+            sender,
+            pact_factory,
+            pact_ticker,
+            idempotency_strategy,
+            recorder,
+        ));
+
+        let invalid_msg = Msg {
+            body: "body".to_string(),
+            from_id: "origin".to_string(),
+            id: "msg-invalid-version".to_string(),
+            to_ids: vec!["recipient_a".to_string()],
+            type_: "text".to_string(),
+            version: 0,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
+        };
+        let tx = db.dbtx_create().expect("dbtx_create");
+        let mut ctx = Context::new();
+        let ctx = dbtx_to_ctx(&mut ctx, tx.clone());
+        let err = courier
+            .tx(ctx, &invalid_msg)
+            .await
+            .expect_err("tx should reject zero version");
+        assert!(err.contains("version"));
+    }
 }

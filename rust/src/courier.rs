@@ -483,6 +483,9 @@ impl Rx for Courier {
                     ack_to_id, self.id
                 ));
             }
+            if msg.version != ack_version {
+                return Err("invalid ack: envelope version must match ack_version".to_string());
+            }
             let mut tx_msg = match self.dao.tx_msg_get(dbtx, &acked_msg_id)? {
                 Some(tx_msg) => tx_msg,
                 None => return Ok(()),
@@ -516,6 +519,16 @@ impl Rx for Courier {
                 ..ObservabilityEvent::new("courier.ack.processed")
             });
         } else {
+            if msg.ack_msg_id.is_some()
+                || msg.ack_from_id.is_some()
+                || msg.ack_to_id.is_some()
+                || msg.ack_version.is_some()
+            {
+                return Err(
+                    "invalid message: non-ack message must not include ack correlation fields"
+                        .to_string(),
+                );
+            }
             match self
                 .idempotency_strategy
                 .on_rx(&self.dao, dbtx, msg, tick)?
@@ -589,6 +602,21 @@ impl Tx for Courier {
     /// # Transaction Management
     /// All database operations are performed within the transaction from the context.
     async fn tx(&self, ctx: Arc<RwLock<Context>>, msg: &Msg) -> Result<(), String> {
+        if msg.version == 0 {
+            return Err("invalid message: version must be >= 1".to_string());
+        }
+        if msg.type_ != *MSG_ACK_TYPE
+            && (msg.ack_msg_id.is_some()
+                || msg.ack_from_id.is_some()
+                || msg.ack_to_id.is_some()
+                || msg.ack_version.is_some())
+        {
+            return Err(
+                "invalid message: non-ack message must not include ack correlation fields"
+                    .to_string(),
+            );
+        }
+
         // Retrieve dbtx from context
         let ctx_guard = ctx.read().unwrap();
         let dbtx = dbtx_from_ctx(&ctx_guard).unwrap();
