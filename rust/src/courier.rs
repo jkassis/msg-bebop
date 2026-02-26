@@ -1,6 +1,7 @@
 use crate::context::Context;
 use crate::{
     db::{dbtx_from_ctx, DBTx, DB},
+    expiration::{ExpirationHook, NoopExpirationHook},
     idempotency::{IdempotencyResult, IdempotencyStrategy},
     observability::{ObservabilityEvent, ObservabilityRecorder},
     pact::Pact,
@@ -238,6 +239,7 @@ pub struct Courier {
     pact_ticker: Arc<dyn Fn(&mut Pact, u64) -> Option<u64> + Send + Sync>, // New pact_ticker field
     idempotency_strategy: Arc<dyn IdempotencyStrategy + Send + Sync>,
     recorder: Arc<dyn ObservabilityRecorder + Send + Sync>,
+    expiration_hook: Arc<dyn ExpirationHook + Send + Sync>,
     sender: Arc<dyn Tx + Send + Sync>,
     tick_last: AtomicU64,
 }
@@ -260,6 +262,30 @@ impl Courier {
         idempotency_strategy: Arc<dyn IdempotencyStrategy + Send + Sync>,
         recorder: Arc<dyn ObservabilityRecorder + Send + Sync>,
     ) -> Self {
+        Self::new_with_expiration_hook(
+            id,
+            db,
+            db_prefix,
+            sender,
+            pact_factory,
+            pact_ticker,
+            idempotency_strategy,
+            recorder,
+            Arc::new(NoopExpirationHook),
+        )
+    }
+
+    pub fn new_with_expiration_hook(
+        id: String,
+        db: Arc<dyn DB + Send + Sync>,
+        db_prefix: String,
+        sender: Arc<dyn Tx + Send + Sync>,
+        pact_factory: Arc<dyn Fn(&Msg) -> Pact + Send + Sync>,
+        pact_ticker: Arc<dyn Fn(&mut Pact, u64) -> Option<u64> + Send + Sync>,
+        idempotency_strategy: Arc<dyn IdempotencyStrategy + Send + Sync>,
+        recorder: Arc<dyn ObservabilityRecorder + Send + Sync>,
+        expiration_hook: Arc<dyn ExpirationHook + Send + Sync>,
+    ) -> Self {
         Courier {
             id,
             db,
@@ -269,6 +295,7 @@ impl Courier {
             pact_ticker,
             idempotency_strategy,
             recorder,
+            expiration_hook,
             tick_last: AtomicU64::new(0),
         }
     }
@@ -366,6 +393,13 @@ impl Courier {
                 self.dao.tx_pact_put(dbtx, &msg_id, &pact)?;
             } else {
                 // no more retries
+                self.expiration_hook.on_expire(dbtx, &msg, &pact, tick)?;
+                self.recorder.record(ObservabilityEvent {
+                    msg_id: Some(msg.id.clone()),
+                    tick: Some(tick),
+                    try_count: Some(pact.try_count),
+                    ..ObservabilityEvent::new("courier.msg.expired")
+                });
                 self.dao.tx_msg_del(dbtx, &msg.id)?;
                 self.dao.tx_pact_del(dbtx, &msg.id)?;
             }

@@ -4,6 +4,7 @@ mod courier_tests {
         context::Context,
         db::{dbtx_to_ctx, DB},
         db_sled::SledDB,
+        expiration::{DlqExpirationHook, ExpiredEnvelope},
         idempotency::ReceiptIdempotencyStrategy,
         observability::NoopObservabilityRecorder,
         pact::Pact,
@@ -460,5 +461,85 @@ mod courier_tests {
             .expect("tx_msg_get")
             .expect("outbound should remain pending");
         assert_eq!(persisted.to_ids, vec!["recipient_a".to_string()]);
+    }
+
+    #[tokio::test]
+    async fn test_expired_message_goes_to_dlq_hook() {
+        let db_path = "/tmp/test_expiration_dlq_db";
+        std::fs::remove_dir_all(db_path).ok();
+        let db: Arc<dyn DB + Send + Sync> =
+            Arc::new(SledDB::new(db_path).expect("Failed to initialize DbSled"));
+
+        let pact_factory = Arc::new(|_: &Msg| Pact {
+            tick_of_last_attempt: 0,
+            try_count: 0,
+        });
+        let pact_ticker = Arc::new(|_pact: &mut Pact, _tick: u64| -> Option<u64> { None });
+        let idempotency_strategy = Arc::new(ReceiptIdempotencyStrategy::new(Arc::new(
+            |_receipt: &Receipt| true,
+        )));
+        let recorder = Arc::new(NoopObservabilityRecorder);
+        let sender = Arc::new(SyncTx::new());
+        let expiration_hook = Arc::new(DlqExpirationHook::new("txdlq".to_string()));
+        let courier = Arc::new(Courier::new_with_expiration_hook(
+            "tx".to_string(),
+            db.clone(),
+            "tx".to_string(),
+            sender,
+            pact_factory,
+            pact_ticker,
+            idempotency_strategy,
+            recorder,
+            expiration_hook,
+        ));
+
+        let outbound = Msg {
+            body: "body".to_string(),
+            from_id: "origin".to_string(),
+            id: "msg-expire".to_string(),
+            to_ids: vec!["recipient_a".to_string()],
+            type_: "text".to_string(),
+            version: 1,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
+        };
+        let tx = db.dbtx_create().expect("dbtx_create");
+        let mut ctx = Context::new();
+        let ctx = dbtx_to_ctx(&mut ctx, tx.clone());
+        courier
+            .tx(ctx.clone(), &outbound)
+            .await
+            .expect("tx outbound");
+        tx.commit().expect("commit outbound");
+
+        let tick_tx = db.dbtx_create().expect("tick dbtx_create");
+        courier
+            .tick(ctx, tick_tx.as_ref(), 10)
+            .await
+            .expect("tick should succeed");
+        tick_tx.commit().expect("tick commit");
+
+        let check_tx = db.dbtx_create().expect("dbtx_create");
+        let dao = courier.dao();
+        assert!(dao
+            .tx_msg_get(check_tx.as_ref(), &outbound.id)
+            .expect("tx_msg_get")
+            .is_none());
+        assert!(dao
+            .tx_pact_get(check_tx.as_ref(), &outbound.id)
+            .expect("tx_pact_get")
+            .is_none());
+
+        let dlq_key = "txdlq:expired:10:msg-expire";
+        let dlq_payload = check_tx
+            .obj_get(dlq_key)
+            .expect("obj_get should succeed")
+            .expect("dlq payload should exist");
+        let dlq_envelope: ExpiredEnvelope =
+            serde_json::from_slice(&dlq_payload).expect("valid dlq envelope");
+        assert_eq!(dlq_envelope.msg.id, outbound.id);
+        assert_eq!(dlq_envelope.expired_at_tick, 10);
     }
 }

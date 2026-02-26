@@ -6,6 +6,7 @@ pub mod courier;
 pub mod db;
 pub mod db_sled;
 mod db_sled_tests;
+pub mod expiration;
 pub mod idempotency;
 pub mod observability;
 pub mod rustie {
@@ -22,6 +23,7 @@ pub use context::*;
 pub use courier::*;
 pub use db::*;
 pub use db_sled::*;
+pub use expiration::*;
 pub use idempotency::*;
 pub use observability::*;
 pub use pact::*;
