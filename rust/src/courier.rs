@@ -1,6 +1,7 @@
 use crate::context::Context;
 use crate::{
     db::{dbtx_from_ctx, DBTx, DB},
+    error::CourierError,
     expiration::{ExpirationHook, NoopExpirationHook},
     idempotency::{IdempotencyResult, IdempotencyStrategy},
     observability::{ObservabilityEvent, ObservabilityRecorder},
@@ -453,57 +454,66 @@ impl Rx for Courier {
 
         // is the incoming message an ack?
         if msg.type_ == *MSG_ACK_TYPE {
-            let acked_msg_id = msg
-                .ack_msg_id
-                .clone()
-                .ok_or_else(|| "invalid ack: missing ack_msg_id".to_string())?;
-            let ack_from_id = msg
-                .ack_from_id
-                .clone()
-                .ok_or_else(|| "invalid ack: missing ack_from_id".to_string())?;
-            let ack_to_id = msg
-                .ack_to_id
-                .clone()
-                .ok_or_else(|| "invalid ack: missing ack_to_id".to_string())?;
-            let ack_version = msg
-                .ack_version
-                .ok_or_else(|| "invalid ack: missing ack_version".to_string())?;
+            let acked_msg_id = msg.ack_msg_id.clone().ok_or_else(|| {
+                CourierError::caller_bug("invalid ack: missing ack_msg_id").to_string()
+            })?;
+            let ack_from_id = msg.ack_from_id.clone().ok_or_else(|| {
+                CourierError::caller_bug("invalid ack: missing ack_from_id").to_string()
+            })?;
+            let ack_to_id = msg.ack_to_id.clone().ok_or_else(|| {
+                CourierError::caller_bug("invalid ack: missing ack_to_id").to_string()
+            })?;
+            let ack_version = msg.ack_version.ok_or_else(|| {
+                CourierError::caller_bug("invalid ack: missing ack_version").to_string()
+            })?;
             if acked_msg_id.is_empty() {
-                return Err("ack msg_id cannot be empty".to_string());
+                return Err(CourierError::caller_bug("ack msg_id cannot be empty").to_string());
             }
             if ack_from_id != msg.from_id {
-                return Err("invalid ack: ack_from_id does not match envelope from_id".to_string());
+                return Err(CourierError::caller_bug(
+                    "invalid ack: ack_from_id does not match envelope from_id",
+                )
+                .to_string());
             }
             if !msg.to_ids.iter().any(|to_id| to_id == &ack_to_id) {
-                return Err("invalid ack: ack_to_id must be in envelope to_ids".to_string());
+                return Err(CourierError::caller_bug(
+                    "invalid ack: ack_to_id must be in envelope to_ids",
+                )
+                .to_string());
             }
             if ack_to_id != self.id {
-                return Err(format!(
+                return Err(CourierError::caller_bug(format!(
                     "invalid ack: ack_to_id {} does not target this courier {}",
                     ack_to_id, self.id
-                ));
+                ))
+                .to_string());
             }
             if msg.version != ack_version {
-                return Err("invalid ack: envelope version must match ack_version".to_string());
+                return Err(CourierError::caller_bug(
+                    "invalid ack: envelope version must match ack_version",
+                )
+                .to_string());
             }
             let mut tx_msg = match self.dao.tx_msg_get(dbtx, &acked_msg_id)? {
                 Some(tx_msg) => tx_msg,
                 None => return Ok(()),
             };
             if ack_version != tx_msg.version {
-                return Err(format!(
+                return Err(CourierError::caller_bug(format!(
                     "invalid ack: ack_version {} does not match msg version {}",
                     ack_version, tx_msg.version
-                ));
+                ))
+                .to_string());
             }
 
             let before_len = tx_msg.to_ids.len();
             tx_msg.to_ids.retain(|to_id| to_id != &ack_from_id);
             if tx_msg.to_ids.len() == before_len {
-                return Err(format!(
+                return Err(CourierError::caller_bug(format!(
                     "invalid ack: {} is not a pending recipient for msg {}",
                     ack_from_id, acked_msg_id
-                ));
+                ))
+                .to_string());
             }
 
             if tx_msg.to_ids.is_empty() {
@@ -524,10 +534,10 @@ impl Rx for Courier {
                 || msg.ack_to_id.is_some()
                 || msg.ack_version.is_some()
             {
-                return Err(
-                    "invalid message: non-ack message must not include ack correlation fields"
-                        .to_string(),
-                );
+                return Err(CourierError::caller_bug(
+                    "invalid message: non-ack message must not include ack correlation fields",
+                )
+                .to_string());
             }
             match self
                 .idempotency_strategy
@@ -603,7 +613,9 @@ impl Tx for Courier {
     /// All database operations are performed within the transaction from the context.
     async fn tx(&self, ctx: Arc<RwLock<Context>>, msg: &Msg) -> Result<(), String> {
         if msg.version == 0 {
-            return Err("invalid message: version must be >= 1".to_string());
+            return Err(
+                CourierError::caller_bug("invalid message: version must be >= 1").to_string(),
+            );
         }
         if msg.type_ != *MSG_ACK_TYPE
             && (msg.ack_msg_id.is_some()
@@ -611,10 +623,10 @@ impl Tx for Courier {
                 || msg.ack_to_id.is_some()
                 || msg.ack_version.is_some())
         {
-            return Err(
-                "invalid message: non-ack message must not include ack correlation fields"
-                    .to_string(),
-            );
+            return Err(CourierError::caller_bug(
+                "invalid message: non-ack message must not include ack correlation fields",
+            )
+            .to_string());
         }
 
         // Retrieve dbtx from context

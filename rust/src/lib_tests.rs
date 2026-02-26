@@ -3,6 +3,7 @@ mod tests {
     use crate::validate_receipt_horizon;
     use crate::Msg;
     use crate::Pact;
+    use crate::{CourierError, ErrorCategory};
 
     #[tokio::test]
     async fn test_msg_serialization() {
@@ -49,6 +50,14 @@ mod tests {
     async fn test_receipt_horizon_guardrail() {
         assert!(validate_receipt_horizon(100, 50).is_ok());
         assert!(validate_receipt_horizon(50, 50).is_ok());
-        assert!(validate_receipt_horizon(49, 50).is_err());
+        let err = validate_receipt_horizon(49, 50).expect_err("must reject invalid horizon");
+        assert!(err.contains("caller_bug"));
+    }
+
+    #[tokio::test]
+    async fn test_typed_error_display_prefix() {
+        let err = CourierError::retryable("temporary db timeout");
+        assert_eq!(err.category, ErrorCategory::Retryable);
+        assert_eq!(err.to_string(), "retryable: temporary db timeout");
     }
 }

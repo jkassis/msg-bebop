@@ -1,4 +1,4 @@
-use crate::{courier::DAO, db::DBTx, receipt::Receipt, Msg};
+use crate::{courier::DAO, db::DBTx, error::CourierError, receipt::Receipt, Msg};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,9 +33,10 @@ pub fn validate_receipt_horizon(
     max_retry_horizon_ticks: u64,
 ) -> Result<(), String> {
     if keep_receipt_ticks < max_retry_horizon_ticks {
-        return Err(format!(
+        return Err(CourierError::caller_bug(format!(
             "invalid receipt strategy: keep_receipt_ticks ({keep_receipt_ticks}) < max_retry_horizon_ticks ({max_retry_horizon_ticks})"
-        ));
+        ))
+        .to_string());
     }
     Ok(())
 }
