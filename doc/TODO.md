@@ -33,10 +33,6 @@
 
 ## Open Questions (Decision Needed)
 
-1. ACK timeout/retry interaction for partial success:
-   - Option A: one shared pact per message, regardless of remaining recipients.
-   - Option B: per-recipient pact state after first partial ACK.
-
 ## Decisions Captured
 
 - Observability payload baseline is option B, with retry/latency fields and monotonic/injected timing (avoid hot-path wall-clock calls).
@@ -44,3 +40,4 @@
 - Message version evolution uses configurable compatibility windows (strategy B).
 - Runbooks will be split by incident class under `doc/runbooks/` (strategy B).
 - Multi-recipient ACK progress uses recipient-list shrinking: on validated ACK, remove the acking `to_id` from the message's target recipient IDs so future retries skip that recipient.
+- ACK timeout/retry for partial success uses one shared pact per message (Option A) to avoid per-recipient write amplification.
