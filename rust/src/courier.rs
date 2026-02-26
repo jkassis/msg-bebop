@@ -419,10 +419,33 @@ impl Rx for Courier {
 
         // is the incoming message an ack?
         if msg.type_ == *MSG_ACK_TYPE {
-            self.dao.tx_msg_del(dbtx, &msg.body)?;
-            self.dao.tx_pact_del(dbtx, &msg.body)?;
+            let acked_msg_id = msg.body.clone();
+            if acked_msg_id.is_empty() {
+                return Err("ack msg_id cannot be empty".to_string());
+            }
+            let mut tx_msg = match self.dao.tx_msg_get(dbtx, &acked_msg_id)? {
+                Some(tx_msg) => tx_msg,
+                None => return Ok(()),
+            };
+
+            let before_len = tx_msg.to_ids.len();
+            tx_msg.to_ids.retain(|to_id| to_id != &msg.from_id);
+            if tx_msg.to_ids.len() == before_len {
+                return Err(format!(
+                    "invalid ack: {} is not a pending recipient for msg {}",
+                    msg.from_id, acked_msg_id
+                ));
+            }
+
+            if tx_msg.to_ids.is_empty() {
+                self.dao.tx_msg_del(dbtx, &acked_msg_id)?;
+                self.dao.tx_pact_del(dbtx, &acked_msg_id)?;
+            } else {
+                self.dao.tx_msg_put(dbtx, &tx_msg)?;
+            }
+
             self.recorder.record(ObservabilityEvent {
-                msg_id: Some(msg.body.clone()),
+                msg_id: Some(acked_msg_id),
                 tick: Some(tick),
                 ..ObservabilityEvent::new("courier.ack.processed")
             });

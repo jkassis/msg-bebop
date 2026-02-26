@@ -296,4 +296,139 @@ mod courier_tests {
         // Cleanup
         rx_db.flush().expect("Failed to close rx_courier database");
     }
+
+    #[tokio::test]
+    async fn test_ack_removes_only_acking_recipient() {
+        let db_path = "/tmp/test_ack_partial_progress_db";
+        std::fs::remove_dir_all(db_path).ok();
+        let db: Arc<dyn DB + Send + Sync> =
+            Arc::new(SledDB::new(db_path).expect("Failed to initialize DbSled"));
+
+        let pact_factory = Arc::new(|_: &Msg| Pact {
+            tick_of_last_attempt: 0,
+            try_count: 0,
+        });
+        let pact_ticker = Arc::new(|pact: &mut Pact, tick: u64| -> Option<u64> {
+            pact.try_count += 1;
+            Some(tick + 1)
+        });
+        let idempotency_strategy = Arc::new(ReceiptIdempotencyStrategy::new(Arc::new(
+            |_receipt: &Receipt| true,
+        )));
+        let recorder = Arc::new(NoopObservabilityRecorder);
+        let sender = Arc::new(SyncTx::new());
+        let courier = Arc::new(Courier::new(
+            "tx".to_string(),
+            db.clone(),
+            "tx".to_string(),
+            sender,
+            pact_factory,
+            pact_ticker,
+            idempotency_strategy,
+            recorder,
+        ));
+
+        let outbound = Msg {
+            body: "body".to_string(),
+            from_id: "origin".to_string(),
+            id: "msg-partial-ack".to_string(),
+            to_ids: vec!["recipient_a".to_string(), "recipient_b".to_string()],
+            type_: "text".to_string(),
+        };
+        let tx = db.dbtx_create().expect("dbtx_create");
+        let mut ctx = Context::new();
+        let ctx = dbtx_to_ctx(&mut ctx, tx.clone());
+        courier.tx(ctx, &outbound).await.expect("tx outbound");
+        tx.commit().expect("commit outbound");
+
+        let ack = Msg {
+            body: outbound.id.clone(),
+            from_id: "recipient_a".to_string(),
+            id: "ack-id".to_string(),
+            to_ids: vec!["origin".to_string()],
+            type_: "Ack".to_string(),
+        };
+        courier
+            .rx(Arc::new(RwLock::new(Context::new())), &ack)
+            .await
+            .expect("ack should be accepted");
+
+        let check_tx = db.dbtx_create().expect("dbtx_create");
+        let dao = courier.dao();
+        let persisted = dao
+            .tx_msg_get(check_tx.as_ref(), &outbound.id)
+            .expect("tx_msg_get")
+            .expect("outbound should remain pending");
+        assert_eq!(persisted.to_ids, vec!["recipient_b".to_string()]);
+        assert!(dao
+            .tx_pact_get(check_tx.as_ref(), &outbound.id)
+            .expect("tx_pact_get")
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn test_ack_rejects_non_recipient() {
+        let db_path = "/tmp/test_ack_non_recipient_db";
+        std::fs::remove_dir_all(db_path).ok();
+        let db: Arc<dyn DB + Send + Sync> =
+            Arc::new(SledDB::new(db_path).expect("Failed to initialize DbSled"));
+
+        let pact_factory = Arc::new(|_: &Msg| Pact {
+            tick_of_last_attempt: 0,
+            try_count: 0,
+        });
+        let pact_ticker = Arc::new(|pact: &mut Pact, tick: u64| -> Option<u64> {
+            pact.try_count += 1;
+            Some(tick + 1)
+        });
+        let idempotency_strategy = Arc::new(ReceiptIdempotencyStrategy::new(Arc::new(
+            |_receipt: &Receipt| true,
+        )));
+        let recorder = Arc::new(NoopObservabilityRecorder);
+        let sender = Arc::new(SyncTx::new());
+        let courier = Arc::new(Courier::new(
+            "tx".to_string(),
+            db.clone(),
+            "tx".to_string(),
+            sender,
+            pact_factory,
+            pact_ticker,
+            idempotency_strategy,
+            recorder,
+        ));
+
+        let outbound = Msg {
+            body: "body".to_string(),
+            from_id: "origin".to_string(),
+            id: "msg-invalid-ack".to_string(),
+            to_ids: vec!["recipient_a".to_string()],
+            type_: "text".to_string(),
+        };
+        let tx = db.dbtx_create().expect("dbtx_create");
+        let mut ctx = Context::new();
+        let ctx = dbtx_to_ctx(&mut ctx, tx.clone());
+        courier.tx(ctx, &outbound).await.expect("tx outbound");
+        tx.commit().expect("commit outbound");
+
+        let bad_ack = Msg {
+            body: outbound.id.clone(),
+            from_id: "intruder".to_string(),
+            id: "bad-ack-id".to_string(),
+            to_ids: vec!["origin".to_string()],
+            type_: "Ack".to_string(),
+        };
+        let err = courier
+            .rx(Arc::new(RwLock::new(Context::new())), &bad_ack)
+            .await
+            .expect_err("ack should be rejected");
+        assert!(err.contains("invalid ack"));
+
+        let check_tx = db.dbtx_create().expect("dbtx_create");
+        let dao = courier.dao();
+        let persisted = dao
+            .tx_msg_get(check_tx.as_ref(), &outbound.id)
+            .expect("tx_msg_get")
+            .expect("outbound should remain pending");
+        assert_eq!(persisted.to_ids, vec!["recipient_a".to_string()]);
+    }
 }

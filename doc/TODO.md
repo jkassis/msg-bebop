@@ -10,7 +10,7 @@
 - [x] Add a no-op recorder implementation so integrations are optional-by-default.
 - [ ] Add `Msg.version` to all language models and ensure deserialization defaults to `1` when missing.
 - [ ] Add ACK validation fields (`msg_id`, `from_id`, `to_id`, `version`) and reject malformed/mismatched ACKs.
-- [ ] Define/implement multi-recipient ACK progress semantics by removing the validated ACK `to_id` from message recipient targets so retries only target unacked recipients.
+- [x] Define/implement multi-recipient ACK progress semantics by removing the validated ACK `to_id` from message recipient targets so retries only target unacked recipients.
 
 ### P1
 
