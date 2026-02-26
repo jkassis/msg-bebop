@@ -21,6 +21,6 @@
 
 ### P2
 
-- [ ] Build cross-language conformance suite with shared scenarios and expected outcomes.
+- [x] Build cross-language conformance suite with shared scenarios and expected outcomes.
 - [ ] Add deterministic replay test cases (fixed tick stream, fixed policy functions, deterministic IDs).
 - [ ] Add operator runbooks for backlog spikes, poison messages, DB pressure, and ack-loss scenarios.

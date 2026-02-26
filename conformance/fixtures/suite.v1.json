@@ -1,0 +1,190 @@
+{
+  "message_decode": [
+    {
+      "name": "missing_version_defaults_to_1",
+      "input": {
+        "id": "m1",
+        "from_id": "sender",
+        "to_ids": ["receiver"],
+        "type_": "text",
+        "body": "hello"
+      },
+      "expected": {
+        "version": 1
+      }
+    },
+    {
+      "name": "explicit_version_preserved",
+      "input": {
+        "id": "m2",
+        "from_id": "sender",
+        "to_ids": ["receiver"],
+        "type_": "text",
+        "body": "hello",
+        "version": 3
+      },
+      "expected": {
+        "version": 3
+      }
+    }
+  ],
+  "tx_validate": [
+    {
+      "name": "non_ack_with_ack_fields_rejected",
+      "msg": {
+        "id": "tx_invalid_ack_fields",
+        "from_id": "sender",
+        "to_ids": ["receiver"],
+        "type_": "text",
+        "body": "hello",
+        "version": 1,
+        "ack_msg_id": "other"
+      },
+      "expected_error_code": "non_ack_has_ack_fields"
+    },
+    {
+      "name": "zero_version_rejected",
+      "msg": {
+        "id": "tx_invalid_zero_version",
+        "from_id": "sender",
+        "to_ids": ["receiver"],
+        "type_": "text",
+        "body": "hello",
+        "version": 0
+      },
+      "expected_error_code": "invalid_msg_version"
+    }
+  ],
+  "ack_apply": [
+    {
+      "name": "valid_partial_ack_shrinks_recipients",
+      "courier_id": "tx",
+      "tx_msg": {
+        "id": "tx_partial",
+        "from_id": "origin",
+        "to_ids": ["a", "b"],
+        "type_": "text",
+        "body": "payload",
+        "version": 1
+      },
+      "ack_msg": {
+        "id": "ack_partial",
+        "from_id": "a",
+        "to_ids": ["tx"],
+        "type_": "Ack",
+        "body": "tx_partial",
+        "version": 1,
+        "ack_msg_id": "tx_partial",
+        "ack_from_id": "a",
+        "ack_to_id": "tx",
+        "ack_version": 1
+      },
+      "expected": {
+        "deleted": false,
+        "remaining_to_ids": ["b"]
+      }
+    },
+    {
+      "name": "final_ack_deletes_message",
+      "courier_id": "tx",
+      "tx_msg": {
+        "id": "tx_final",
+        "from_id": "origin",
+        "to_ids": ["a"],
+        "type_": "text",
+        "body": "payload",
+        "version": 1
+      },
+      "ack_msg": {
+        "id": "ack_final",
+        "from_id": "a",
+        "to_ids": ["tx"],
+        "type_": "Ack",
+        "body": "tx_final",
+        "version": 1,
+        "ack_msg_id": "tx_final",
+        "ack_from_id": "a",
+        "ack_to_id": "tx",
+        "ack_version": 1
+      },
+      "expected": {
+        "deleted": true,
+        "remaining_to_ids": []
+      }
+    },
+    {
+      "name": "reject_missing_ack_msg_id",
+      "courier_id": "tx",
+      "tx_msg": {
+        "id": "tx_missing_ack_id",
+        "from_id": "origin",
+        "to_ids": ["a"],
+        "type_": "text",
+        "body": "payload",
+        "version": 1
+      },
+      "ack_msg": {
+        "id": "ack_missing_ack_id",
+        "from_id": "a",
+        "to_ids": ["tx"],
+        "type_": "Ack",
+        "body": "tx_missing_ack_id",
+        "version": 1,
+        "ack_from_id": "a",
+        "ack_to_id": "tx",
+        "ack_version": 1
+      },
+      "expected_error_code": "missing_ack_msg_id"
+    },
+    {
+      "name": "reject_ack_version_mismatch",
+      "courier_id": "tx",
+      "tx_msg": {
+        "id": "tx_version_mismatch",
+        "from_id": "origin",
+        "to_ids": ["a"],
+        "type_": "text",
+        "body": "payload",
+        "version": 2
+      },
+      "ack_msg": {
+        "id": "ack_version_mismatch",
+        "from_id": "a",
+        "to_ids": ["tx"],
+        "type_": "Ack",
+        "body": "tx_version_mismatch",
+        "version": 1,
+        "ack_msg_id": "tx_version_mismatch",
+        "ack_from_id": "a",
+        "ack_to_id": "tx",
+        "ack_version": 1
+      },
+      "expected_error_code": "ack_version_mismatch"
+    },
+    {
+      "name": "reject_ack_from_not_pending",
+      "courier_id": "tx",
+      "tx_msg": {
+        "id": "tx_from_not_pending",
+        "from_id": "origin",
+        "to_ids": ["a"],
+        "type_": "text",
+        "body": "payload",
+        "version": 1
+      },
+      "ack_msg": {
+        "id": "ack_from_not_pending",
+        "from_id": "intruder",
+        "to_ids": ["tx"],
+        "type_": "Ack",
+        "body": "tx_from_not_pending",
+        "version": 1,
+        "ack_msg_id": "tx_from_not_pending",
+        "ack_from_id": "intruder",
+        "ack_to_id": "tx",
+        "ack_version": 1
+      },
+      "expected_error_code": "ack_from_not_pending"
+    }
+  ]
+}

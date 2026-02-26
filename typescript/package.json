@@ -5,7 +5,7 @@
   "main": "main.js",
   "type": "module",
   "scripts": {
-    "test": "npx mocha src/lib/satori/FSMRoom.test.ts"
+    "test": "npx jest --config jest.config.ts --runInBand"
   },
   "repository": "github.com/jkassis/courier",
   "author": "Jeremy Kassis",
