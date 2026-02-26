@@ -82,6 +82,11 @@ mod courier_tests {
             id: "courier_msg_id".to_string(),
             to_ids: vec!["courier_recipient".to_string()],
             type_: "text".to_string(),
+            version: 1,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
         };
         let tx_txn = tx_db
             .dbtx_create()
@@ -132,6 +137,11 @@ mod courier_tests {
             id: "courier_msg_id".to_string(),
             to_ids: vec!["courier_recipient".to_string()],
             type_: "text".to_string(),
+            version: 1,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
         };
 
         // Initialize logging
@@ -334,6 +344,11 @@ mod courier_tests {
             id: "msg-partial-ack".to_string(),
             to_ids: vec!["recipient_a".to_string(), "recipient_b".to_string()],
             type_: "text".to_string(),
+            version: 1,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
         };
         let tx = db.dbtx_create().expect("dbtx_create");
         let mut ctx = Context::new();
@@ -345,8 +360,13 @@ mod courier_tests {
             body: outbound.id.clone(),
             from_id: "recipient_a".to_string(),
             id: "ack-id".to_string(),
-            to_ids: vec!["origin".to_string()],
+            to_ids: vec!["tx".to_string()],
             type_: "Ack".to_string(),
+            version: 1,
+            ack_msg_id: Some(outbound.id.clone()),
+            ack_from_id: Some("recipient_a".to_string()),
+            ack_to_id: Some("tx".to_string()),
+            ack_version: Some(1),
         };
         courier
             .rx(Arc::new(RwLock::new(Context::new())), &ack)
@@ -403,6 +423,11 @@ mod courier_tests {
             id: "msg-invalid-ack".to_string(),
             to_ids: vec!["recipient_a".to_string()],
             type_: "text".to_string(),
+            version: 1,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
         };
         let tx = db.dbtx_create().expect("dbtx_create");
         let mut ctx = Context::new();
@@ -414,8 +439,13 @@ mod courier_tests {
             body: outbound.id.clone(),
             from_id: "intruder".to_string(),
             id: "bad-ack-id".to_string(),
-            to_ids: vec!["origin".to_string()],
+            to_ids: vec!["tx".to_string()],
             type_: "Ack".to_string(),
+            version: 1,
+            ack_msg_id: Some(outbound.id.clone()),
+            ack_from_id: Some("intruder".to_string()),
+            ack_to_id: Some("tx".to_string()),
+            ack_version: Some(1),
         };
         let err = courier
             .rx(Arc::new(RwLock::new(Context::new())), &bad_ack)

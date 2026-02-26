@@ -419,21 +419,53 @@ impl Rx for Courier {
 
         // is the incoming message an ack?
         if msg.type_ == *MSG_ACK_TYPE {
-            let acked_msg_id = msg.body.clone();
+            let acked_msg_id = msg
+                .ack_msg_id
+                .clone()
+                .ok_or_else(|| "invalid ack: missing ack_msg_id".to_string())?;
+            let ack_from_id = msg
+                .ack_from_id
+                .clone()
+                .ok_or_else(|| "invalid ack: missing ack_from_id".to_string())?;
+            let ack_to_id = msg
+                .ack_to_id
+                .clone()
+                .ok_or_else(|| "invalid ack: missing ack_to_id".to_string())?;
+            let ack_version = msg
+                .ack_version
+                .ok_or_else(|| "invalid ack: missing ack_version".to_string())?;
             if acked_msg_id.is_empty() {
                 return Err("ack msg_id cannot be empty".to_string());
+            }
+            if ack_from_id != msg.from_id {
+                return Err("invalid ack: ack_from_id does not match envelope from_id".to_string());
+            }
+            if !msg.to_ids.iter().any(|to_id| to_id == &ack_to_id) {
+                return Err("invalid ack: ack_to_id must be in envelope to_ids".to_string());
+            }
+            if ack_to_id != self.id {
+                return Err(format!(
+                    "invalid ack: ack_to_id {} does not target this courier {}",
+                    ack_to_id, self.id
+                ));
             }
             let mut tx_msg = match self.dao.tx_msg_get(dbtx, &acked_msg_id)? {
                 Some(tx_msg) => tx_msg,
                 None => return Ok(()),
             };
+            if ack_version != tx_msg.version {
+                return Err(format!(
+                    "invalid ack: ack_version {} does not match msg version {}",
+                    ack_version, tx_msg.version
+                ));
+            }
 
             let before_len = tx_msg.to_ids.len();
-            tx_msg.to_ids.retain(|to_id| to_id != &msg.from_id);
+            tx_msg.to_ids.retain(|to_id| to_id != &ack_from_id);
             if tx_msg.to_ids.len() == before_len {
                 return Err(format!(
                     "invalid ack: {} is not a pending recipient for msg {}",
-                    msg.from_id, acked_msg_id
+                    ack_from_id, acked_msg_id
                 ));
             }
 
@@ -487,6 +519,11 @@ impl Rx for Courier {
                 to_ids: vec![msg.from_id.clone()],
                 type_: MSG_ACK_TYPE.clone(),
                 body: msg.id.clone(),
+                version: msg.version,
+                ack_msg_id: Some(msg.id.clone()),
+                ack_from_id: Some(self.id.clone()),
+                ack_to_id: Some(msg.from_id.clone()),
+                ack_version: Some(msg.version),
             };
 
             // await the send and log errors

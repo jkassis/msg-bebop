@@ -23,6 +23,11 @@ mod tests {
             id: "msg123".to_string(),
             to_ids: vec!["recipient1".to_string()],
             type_: "text".to_string(),
+            version: 1,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
         };
 
         let dbtx = db.dbtx_create().expect("Failed to create DB transaction");

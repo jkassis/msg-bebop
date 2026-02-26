@@ -11,10 +11,26 @@ mod tests {
             id: "msg123".to_string(),
             to_ids: vec!["recipient1".to_string(), "recipient2".to_string()],
             type_: "text".to_string(),
+            version: 1,
+            ack_msg_id: None,
+            ack_from_id: None,
+            ack_to_id: None,
+            ack_version: None,
         };
         let serialized = serde_json::to_string(&msg).unwrap();
         let deserialized: Msg = serde_json::from_str(&serialized).unwrap();
         assert_eq!(msg, deserialized);
+    }
+
+    #[tokio::test]
+    async fn test_msg_deserialize_defaults_version_to_1() {
+        let json = r#"{"id":"m1","from_id":"f","to_ids":["t"],"type_":"text","body":"b"}"#;
+        let msg: Msg = serde_json::from_str(json).unwrap();
+        assert_eq!(msg.version, 1);
+        assert!(msg.ack_msg_id.is_none());
+        assert!(msg.ack_from_id.is_none());
+        assert!(msg.ack_to_id.is_none());
+        assert!(msg.ack_version.is_none());
     }
 
     #[tokio::test]
