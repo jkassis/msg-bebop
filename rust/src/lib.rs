@@ -6,6 +6,8 @@ pub mod courier;
 pub mod db;
 pub mod db_sled;
 mod db_sled_tests;
+pub mod idempotency;
+pub mod observability;
 pub mod rustie {
     pub mod msg {
         pub mod msg;
@@ -20,6 +22,8 @@ pub use context::*;
 pub use courier::*;
 pub use db::*;
 pub use db_sled::*;
+pub use idempotency::*;
+pub use observability::*;
 pub use pact::*;
 pub use rustie::msg::msg::*;
 pub use rustie::msg::txrx::*;

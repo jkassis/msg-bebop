@@ -4,10 +4,10 @@
 
 ### P0
 
-- [ ] Implement `IdempotencyStrategy` interface in Rust and wire it into `rx()`.
-- [ ] Keep receipt dedup as the first built-in strategy under `IdempotencyStrategy::Receipts`.
-- [ ] Add an `ObservabilityRecorder` interface and emit stable events from `tx`, `tick`, and `rx` paths.
-- [ ] Add a no-op recorder implementation so integrations are optional-by-default.
+- [x] Implement `IdempotencyStrategy` interface in Rust and wire it into `rx()`.
+- [x] Keep receipt dedup as the first built-in strategy under `IdempotencyStrategy::Receipts`.
+- [x] Add an `ObservabilityRecorder` interface and emit stable events from `tx`, `tick`, and `rx` paths.
+- [x] Add a no-op recorder implementation so integrations are optional-by-default.
 - [ ] Add `Msg.version` to all language models and ensure deserialization defaults to `1` when missing.
 - [ ] Add ACK validation fields (`msg_id`, `from_id`, `to_id`, `version`) and reject malformed/mismatched ACKs.
 - [ ] Define/implement multi-recipient ACK progress semantics by removing the validated ACK `to_id` from message recipient targets so retries only target unacked recipients.

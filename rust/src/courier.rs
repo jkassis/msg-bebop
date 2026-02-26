@@ -1,6 +1,8 @@
 use crate::context::Context;
 use crate::{
     db::{dbtx_from_ctx, DBTx, DB},
+    idempotency::{IdempotencyResult, IdempotencyStrategy},
+    observability::{ObservabilityEvent, ObservabilityRecorder},
     pact::Pact,
     receipt::Receipt,
     rustie::{
@@ -234,7 +236,8 @@ pub struct Courier {
     dao: DAO,
     pact_factory: Arc<dyn Fn(&Msg) -> Pact + Send + Sync>,
     pact_ticker: Arc<dyn Fn(&mut Pact, u64) -> Option<u64> + Send + Sync>, // New pact_ticker field
-    keep_receipt: Arc<dyn Fn(&Receipt) -> bool + Send + Sync>,
+    idempotency_strategy: Arc<dyn IdempotencyStrategy + Send + Sync>,
+    recorder: Arc<dyn ObservabilityRecorder + Send + Sync>,
     sender: Arc<dyn Tx + Send + Sync>,
     tick_last: AtomicU64,
 }
@@ -254,7 +257,8 @@ impl Courier {
         sender: Arc<dyn Tx + Send + Sync>,
         pact_factory: Arc<dyn Fn(&Msg) -> Pact + Send + Sync>,
         pact_ticker: Arc<dyn Fn(&mut Pact, u64) -> Option<u64> + Send + Sync>,
-        keep_receipt: Arc<dyn Fn(&Receipt) -> bool + Send + Sync>,
+        idempotency_strategy: Arc<dyn IdempotencyStrategy + Send + Sync>,
+        recorder: Arc<dyn ObservabilityRecorder + Send + Sync>,
     ) -> Self {
         Courier {
             id,
@@ -263,7 +267,8 @@ impl Courier {
             sender,
             pact_factory,
             pact_ticker,
-            keep_receipt,
+            idempotency_strategy,
+            recorder,
             tick_last: AtomicU64::new(0),
         }
     }
@@ -292,6 +297,11 @@ impl Courier {
         tick: u64,
     ) -> Result<(), String> {
         info!("Tick started.");
+        self.tick_last.store(tick, Relaxed);
+        self.recorder.record(ObservabilityEvent {
+            tick: Some(tick),
+            ..ObservabilityEvent::new("courier.tick.start")
+        });
 
         // handle send events
         let tx_event_keys = dbtx
@@ -339,6 +349,13 @@ impl Courier {
                 }
             };
 
+            self.recorder.record(ObservabilityEvent {
+                msg_id: Some(msg_id.clone()),
+                tick: Some(tick),
+                try_count: Some(pact.try_count),
+                ..ObservabilityEvent::new("courier.tick.send_attempt")
+            });
+
             // should we schedule a next send_event?
             if let Some(next_send_tick) = (self.pact_ticker)(&mut pact, tick) {
                 // yes. save a new send event
@@ -356,37 +373,22 @@ impl Courier {
             // send and await
             if let Err(e) = self.sender.tx(ctx.clone(), &msg).await {
                 error!("failed to send message: {}", e);
-            }
-        }
-
-        // now expire receipts
-        let rx_receipt_keys = dbtx
-            .seq_get(&self.dao.rx_receipt_key_prefix())
-            .map_err(|e| format!("failed to retrieve tick sequence: {}", e))?;
-
-        for rx_receipt_key in rx_receipt_keys {
-            let msg_id = self.dao.rx_receipt_key_parse(&rx_receipt_key);
-            let mut rx_receipt = match self.dao.rx_receipt_get(dbtx, &msg_id)? {
-                Some(r) => r,
-                None => {
-                    // should never happen...
-                    // but what if our db allows a delete within this dbtx?
-                    error!(
-                        "receipt disappeared while iterating in tick {}",
-                        rx_receipt_key
-                    );
-                    continue;
-                }
-            };
-
-            // let keep_receipt decide
-            if (self.keep_receipt)(&rx_receipt) {
-                rx_receipt.tick_acked_last = tick;
-                self.dao.rx_receipt_put(dbtx, &msg_id, &rx_receipt)?;
+                self.recorder.record(ObservabilityEvent {
+                    msg_id: Some(msg_id.clone()),
+                    tick: Some(tick),
+                    detail: Some(e),
+                    ..ObservabilityEvent::new("courier.tick.send_failure")
+                });
             } else {
-                self.dao.rx_receipt_del(dbtx, &msg_id)?;
+                self.recorder.record(ObservabilityEvent {
+                    msg_id: Some(msg_id),
+                    tick: Some(tick),
+                    ..ObservabilityEvent::new("courier.tick.send_success")
+                });
             }
         }
+
+        self.idempotency_strategy.on_tick(&self.dao, dbtx, tick)?;
 
         Ok(())
     }
@@ -411,38 +413,40 @@ impl Rx for Courier {
     /// # Transaction Management
     /// A new transaction is created and committed for each call.
     async fn rx(&self, ctx: Arc<RwLock<Context>>, msg: &Msg) -> Result<(), String> {
-        print!("rx");
-
         let dbtx_arc = self.db.dbtx_create().map_err(|e| e.to_string())?;
         let dbtx = dbtx_arc.as_ref();
+        let tick = self.tick_last.load(Relaxed);
 
         // is the incoming message an ack?
         if msg.type_ == *MSG_ACK_TYPE {
             self.dao.tx_msg_del(dbtx, &msg.body)?;
             self.dao.tx_pact_del(dbtx, &msg.body)?;
+            self.recorder.record(ObservabilityEvent {
+                msg_id: Some(msg.body.clone()),
+                tick: Some(tick),
+                ..ObservabilityEvent::new("courier.ack.processed")
+            });
         } else {
-            // do we have a receipt for the inbound message?
-            let rx_receipt_key = self.dao.rx_receipt_key_make(&msg.id);
-            if let Some(mut tx_receipt) = self.dao.rx_receipt_get(dbtx, &rx_receipt_key)? {
-                // yes. update receipt.tick_acked_last and re-save
-                tx_receipt.tick_acked_last = self.tick_last.load(Relaxed);
-                self.dao.rx_receipt_put(dbtx, &msg.id, &tx_receipt)?;
-                info!("Receipt updated for key: {}", rx_receipt_key);
-            } else {
-                // save the inbound message for pickup later
-                self.dao.rx_msg_put(dbtx, &msg)?;
-
-                // save a receipt
-                let receipt = Receipt {
-                    tick_acked_first: self.tick_last.load(Relaxed),
-                    tick_acked_last: self.tick_last.load(Relaxed),
-                };
-                self.dao.rx_receipt_put(dbtx, &msg.id, &receipt)?;
-
-                info!(
-                    "Message and receipt successfully stored for key: {}",
-                    &msg.id
-                );
+            match self
+                .idempotency_strategy
+                .on_rx(&self.dao, dbtx, msg, tick)?
+            {
+                IdempotencyResult::Duplicate => {
+                    self.recorder.record(ObservabilityEvent {
+                        msg_id: Some(msg.id.clone()),
+                        tick: Some(tick),
+                        ..ObservabilityEvent::new("courier.rx.duplicate")
+                    });
+                }
+                IdempotencyResult::New => {
+                    // save the inbound message for pickup later
+                    self.dao.rx_msg_put(dbtx, &msg)?;
+                    self.recorder.record(ObservabilityEvent {
+                        msg_id: Some(msg.id.clone()),
+                        tick: Some(tick),
+                        ..ObservabilityEvent::new("courier.rx.handler_success")
+                    });
+                }
             }
         }
 
@@ -505,6 +509,11 @@ impl Tx for Courier {
 
         // schedule an event to send asap
         self.dao.tx_event_put(dbtx, &msg.id, 0)?;
+        self.recorder.record(ObservabilityEvent {
+            msg_id: Some(msg.id.clone()),
+            tick: Some(0),
+            ..ObservabilityEvent::new("courier.tx.persisted")
+        });
 
         Ok(())
     }

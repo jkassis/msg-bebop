@@ -4,6 +4,8 @@ mod courier_tests {
         context::Context,
         db::{dbtx_to_ctx, DB},
         db_sled::SledDB,
+        idempotency::ReceiptIdempotencyStrategy,
+        observability::NoopObservabilityRecorder,
         pact::Pact,
         receipt::Receipt,
         rustie::msg::{tx_sync::SyncTx, txrx::*},
@@ -34,7 +36,10 @@ mod courier_tests {
             pact.try_count = pact.try_count + 1;
             Some(tick + 1)
         });
-        let keep_receipt = Arc::new(|_receipt: &Receipt| true);
+        let idempotency_strategy = Arc::new(ReceiptIdempotencyStrategy::new(Arc::new(
+            |_receipt: &Receipt| true,
+        )));
+        let recorder = Arc::new(NoopObservabilityRecorder);
 
         // init tx_courier
         let tx_db: Arc<dyn DB + Send + Sync> =
@@ -47,7 +52,8 @@ mod courier_tests {
             tx_comm.clone(),
             pact_factory.clone(),
             pact_ticker.clone(),
-            keep_receipt.clone(),
+            idempotency_strategy.clone(),
+            recorder.clone(),
         ));
 
         // init rx_courier
@@ -61,7 +67,8 @@ mod courier_tests {
             rx_comm.clone(),
             pact_factory.clone(),
             pact_ticker.clone(),
-            keep_receipt.clone(),
+            idempotency_strategy.clone(),
+            recorder.clone(),
         ));
 
         // Register each Courier as a receiver on the comm of the other
@@ -154,7 +161,10 @@ mod courier_tests {
             pact.try_count += 1;
             Some(tick + 1)
         });
-        let keep_receipt = Arc::new(|_receipt: &Receipt| true);
+        let idempotency_strategy = Arc::new(ReceiptIdempotencyStrategy::new(Arc::new(
+            |_receipt: &Receipt| true,
+        )));
+        let recorder = Arc::new(NoopObservabilityRecorder);
 
         {
             // Initialize tx_courier
@@ -166,7 +176,8 @@ mod courier_tests {
                 tx_comm.clone(),
                 pact_factory.clone(),
                 pact_ticker.clone(),
-                keep_receipt.clone(),
+                idempotency_strategy.clone(),
+                recorder.clone(),
             ));
 
             // Initialize rx_courier
@@ -178,7 +189,8 @@ mod courier_tests {
                 rx_comm.clone(),
                 pact_factory.clone(),
                 pact_ticker.clone(),
-                keep_receipt.clone(),
+                idempotency_strategy.clone(),
+                recorder.clone(),
             ));
 
             // Register each Courier as a receiver on the comm of the other
@@ -238,7 +250,8 @@ mod courier_tests {
             tx_comm.clone(),
             pact_factory.clone(),
             pact_ticker.clone(),
-            keep_receipt.clone(),
+            idempotency_strategy.clone(),
+            recorder.clone(),
         ));
         let tx_ctx = Arc::new(RwLock::new(Context::new()));
 
@@ -251,7 +264,8 @@ mod courier_tests {
             rx_comm.clone(),
             pact_factory.clone(),
             pact_ticker.clone(),
-            keep_receipt.clone(),
+            idempotency_strategy.clone(),
+            recorder.clone(),
         ));
 
         // Register each Courier as a receiver on the comm of the other

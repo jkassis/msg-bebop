@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // Add serialization support to MessagePact and related types
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]

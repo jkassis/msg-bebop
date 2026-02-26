@@ -6,4 +6,3 @@ use courier::add;
 fn test_add_from_integration() {
     assert_eq!(add(1, 2), 3);
 }
-
