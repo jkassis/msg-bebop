@@ -118,8 +118,6 @@ mod courier_tests {
 
     #[tokio::test]
     async fn test_durability() {
-        use std::time::Duration;
-
         // TX
         let msg = Msg {
             body: "Courier test message".to_string(),
