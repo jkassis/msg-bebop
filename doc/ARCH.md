@@ -407,6 +407,17 @@ Courier supports message versioning with minimal overhead via the `Msg.version` 
 
 ---
 
+## Captured Decisions
+
+- Observability payload baseline is option B, with retry/latency fields and monotonic/injected timing (avoid hot-path wall-clock calls).
+- ACK validation requires correlation fields and malformed ACK rejection.
+- Message version evolution uses configurable compatibility windows (strategy B).
+- Runbooks will be split by incident class under `doc/runbooks/` (strategy B).
+- Multi-recipient ACK progress uses recipient-list shrinking: on validated ACK, remove the acking `to_id` from the message's target recipient IDs so future retries skip that recipient.
+- ACK timeout/retry for partial success uses one shared pact per message (Option A) to avoid per-recipient write amplification.
+
+---
+
 ## Invariants
 
 - A message is only visible to `tick()` after the caller commits its DB transaction.
