@@ -409,8 +409,8 @@ interop_cmd() {
 
   case "$subcommand" in
   test)
-    echo "→ Running go->ts->rust interop e2e..."
-    ./conformance/e2e/test_go_ts_rust.sh "$@"
+    echo "→ Running cross-language interop e2e topology matrix..."
+    ./conformance/e2e/test_all_topologies.sh "$@"
     ;;
   *)
     echo "✘ Unknown subcommand for 'interop': '$subcommand'"

@@ -88,7 +88,25 @@ func runServer(listen string, node string, next string, once bool) error {
 			}
 			_ = upstream.Close()
 		} else {
-			out = in
+			ackMsgID := in.Msg.ID
+			ackFromID := node
+			ackToID := in.Msg.FromID
+			ackVersion := in.Msg.Version
+			out = Envelope{
+				Msg: Msg{
+					Body:      in.Msg.ID,
+					FromID:    node,
+					ID:        "ack-" + in.Msg.ID,
+					ToIDs:     []string{in.Msg.FromID},
+					Type:      "Ack",
+					Version:   in.Msg.Version,
+					AckMsgID:  &ackMsgID,
+					AckFromID: &ackFromID,
+					AckToID:   &ackToID,
+					AckVer:    &ackVersion,
+				},
+				Hops: in.Hops,
+			}
 		}
 
 		if err := writeJSONLine(conn, out); err != nil {
@@ -103,7 +121,7 @@ func runServer(listen string, node string, next string, once bool) error {
 	}
 }
 
-func runClient(addr string, node string, expectHops []string) error {
+func runClient(addr string, node string, expectHops []string, expectAckFrom string) error {
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return err
@@ -132,6 +150,21 @@ func runClient(addr string, node string, expectHops []string) error {
 	if !slices.Equal(resp.Hops, expectHops) {
 		return fmt.Errorf("unexpected hops: got %v want %v", resp.Hops, expectHops)
 	}
+	if resp.Msg.Type != "Ack" {
+		return fmt.Errorf("expected Ack response, got %s", resp.Msg.Type)
+	}
+	if resp.Msg.AckMsgID == nil || *resp.Msg.AckMsgID != req.Msg.ID {
+		return fmt.Errorf("ack_msg_id mismatch")
+	}
+	if resp.Msg.AckFromID == nil || *resp.Msg.AckFromID != expectAckFrom {
+		return fmt.Errorf("ack_from_id mismatch")
+	}
+	if resp.Msg.AckToID == nil || *resp.Msg.AckToID != node {
+		return fmt.Errorf("ack_to_id mismatch")
+	}
+	if resp.Msg.AckVer == nil || *resp.Msg.AckVer != req.Msg.Version {
+		return fmt.Errorf("ack_version mismatch")
+	}
 	fmt.Printf("OK hops=%v\n", resp.Hops)
 	return nil
 }
@@ -143,6 +176,7 @@ func main() {
 	next := flag.String("next", "", "next addr for server")
 	addr := flag.String("addr", "", "addr for client")
 	expect := flag.String("expect-hops", "", "comma-separated expected hops for client")
+	expectAckFrom := flag.String("expect-ack-from", "", "expected terminal ack sender for client")
 	once := flag.Bool("once", false, "serve a single request then exit")
 	flag.Parse()
 
@@ -155,10 +189,10 @@ func main() {
 			err = runServer(*listen, *node, *next, *once)
 		}
 	case "client":
-		if *addr == "" || *expect == "" {
-			err = errors.New("missing -addr or -expect-hops")
+		if *addr == "" || *expect == "" || *expectAckFrom == "" {
+			err = errors.New("missing -addr, -expect-hops, or -expect-ack-from")
 		} else {
-			err = runClient(*addr, *node, strings.Split(*expect, ","))
+			err = runClient(*addr, *node, strings.Split(*expect, ","), *expectAckFrom)
 		}
 	default:
 		err = fmt.Errorf("unsupported mode %q", *mode)

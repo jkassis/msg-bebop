@@ -95,7 +95,21 @@ async function runServer(listen: string, node: string, next?: string, once = fal
       try {
         const req = await readJSONLine(conn)
         req.hops.push(node)
-        const resp = next ? await forward(next, req) : req
+        const resp = next ? await forward(next, req) : {
+          msg: {
+            body: req.msg.id,
+            from_id: node,
+            id: `ack-${req.msg.id}`,
+            to_ids: [req.msg.from_id],
+            type_: 'Ack',
+            version: req.msg.version,
+            ack_msg_id: req.msg.id,
+            ack_from_id: node,
+            ack_to_id: req.msg.from_id,
+            ack_version: req.msg.version,
+          },
+          hops: req.hops,
+        }
         await writeJSONLine(conn, resp)
         conn.end()
         if (once) {
@@ -115,7 +129,7 @@ async function runServer(listen: string, node: string, next?: string, once = fal
   })
 }
 
-async function runClient(addr: string, node: string, expectHops: string[]): Promise<void> {
+async function runClient(addr: string, node: string, expectHops: string[], expectAckFrom: string): Promise<void> {
   const [host, portRaw] = addr.split(':')
   const port = Number(portRaw)
   await new Promise<void>((resolve, reject) => {
@@ -137,6 +151,26 @@ async function runClient(addr: string, node: string, expectHops: string[]): Prom
         conn.end()
         if (JSON.stringify(resp.hops) !== JSON.stringify(expectHops)) {
           reject(new Error(`unexpected hops: got ${JSON.stringify(resp.hops)} want ${JSON.stringify(expectHops)}`))
+          return
+        }
+        if (resp.msg.type_ !== 'Ack') {
+          reject(new Error(`expected Ack response, got ${resp.msg.type_}`))
+          return
+        }
+        if (resp.msg.ack_msg_id !== req.msg.id) {
+          reject(new Error('ack_msg_id mismatch'))
+          return
+        }
+        if (resp.msg.ack_from_id !== expectAckFrom) {
+          reject(new Error('ack_from_id mismatch'))
+          return
+        }
+        if (resp.msg.ack_to_id !== node) {
+          reject(new Error('ack_to_id mismatch'))
+          return
+        }
+        if (resp.msg.ack_version !== req.msg.version) {
+          reject(new Error('ack_version mismatch'))
           return
         }
         console.log(`OK hops=${JSON.stringify(resp.hops)}`)
@@ -161,10 +195,10 @@ async function main(): Promise<void> {
     return
   }
   if (mode === 'client') {
-    if (typeof args.addr !== 'string' || typeof args['expect-hops'] !== 'string') {
-      throw new Error('missing --addr or --expect-hops')
+    if (typeof args.addr !== 'string' || typeof args['expect-hops'] !== 'string' || typeof args['expect-ack-from'] !== 'string') {
+      throw new Error('missing --addr, --expect-hops, or --expect-ack-from')
     }
-    await runClient(args.addr, node, args['expect-hops'].split(','))
+    await runClient(args.addr, node, args['expect-hops'].split(','), args['expect-ack-from'])
     return
   }
   throw new Error(`unsupported mode: ${String(mode)}`)

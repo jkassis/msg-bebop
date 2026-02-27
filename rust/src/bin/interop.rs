@@ -56,7 +56,22 @@ fn run_server(listen: &str, node: &str, next: Option<&str>, once: bool) -> Resul
             write_line_json(&mut upstream, &env)?;
             read_line_json::<Envelope>(&upstream)?
         } else {
-            env
+            let req = env;
+            Envelope {
+                msg: Msg {
+                    id: format!("ack-{}", req.msg.id),
+                    from_id: node.to_string(),
+                    to_ids: vec![req.msg.from_id.clone()],
+                    type_: "Ack".to_string(),
+                    body: req.msg.id.clone(),
+                    version: req.msg.version,
+                    ack_msg_id: Some(req.msg.id.clone()),
+                    ack_from_id: Some(node.to_string()),
+                    ack_to_id: Some(req.msg.from_id.clone()),
+                    ack_version: Some(req.msg.version),
+                },
+                hops: req.hops,
+            }
         };
 
         write_line_json(&mut conn, &response)?;
@@ -66,7 +81,12 @@ fn run_server(listen: &str, node: &str, next: Option<&str>, once: bool) -> Resul
     }
 }
 
-fn run_client(addr: &str, node: &str, expect_hops: &[String]) -> Result<(), String> {
+fn run_client(
+    addr: &str,
+    node: &str,
+    expect_hops: &[String],
+    expect_ack_from: &str,
+) -> Result<(), String> {
     let mut stream = TcpStream::connect(addr).map_err(|e| format!("dial {addr} failed: {e}"))?;
     let env = Envelope {
         msg: Msg {
@@ -91,6 +111,21 @@ fn run_client(addr: &str, node: &str, expect_hops: &[String]) -> Result<(), Stri
             response.hops, expect_hops
         ));
     }
+    if response.msg.type_ != "Ack" {
+        return Err(format!("expected Ack response, got {}", response.msg.type_));
+    }
+    if response.msg.ack_msg_id.as_deref() != Some(env.msg.id.as_str()) {
+        return Err("ack_msg_id mismatch".to_string());
+    }
+    if response.msg.ack_from_id.as_deref() != Some(expect_ack_from) {
+        return Err("ack_from_id mismatch".to_string());
+    }
+    if response.msg.ack_to_id.as_deref() != Some(node) {
+        return Err("ack_to_id mismatch".to_string());
+    }
+    if response.msg.ack_version != Some(env.msg.version) {
+        return Err("ack_version mismatch".to_string());
+    }
     println!("OK hops={:?}", response.hops);
     Ok(())
 }
@@ -111,8 +146,10 @@ fn main() -> Result<(), String> {
             let addr = parse_arg(&args, "addr").ok_or_else(|| "missing --addr".to_string())?;
             let expect = parse_arg(&args, "expect-hops")
                 .ok_or_else(|| "missing --expect-hops".to_string())?;
+            let expect_ack_from = parse_arg(&args, "expect-ack-from")
+                .ok_or_else(|| "missing --expect-ack-from".to_string())?;
             let expect_hops = expect.split(',').map(|s| s.to_string()).collect::<Vec<_>>();
-            run_client(&addr, &node, &expect_hops)
+            run_client(&addr, &node, &expect_hops, &expect_ack_from)
         }
         _ => Err(format!("unsupported mode: {mode}")),
     }
