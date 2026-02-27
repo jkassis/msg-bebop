@@ -4,6 +4,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TOPOLOGY="${1:-go,ts,rust}"
+COUNT="${2:-1}"
+ACK_MODE="${3:-normal}"
+EXPECT_FAILURE="${4:-0}"
 HOST="127.0.0.1"
 
 IFS=',' read -r CLIENT_LANG MID_LANG TERMINAL_LANG <<<"$TOPOLOGY"
@@ -37,32 +40,34 @@ run_server() {
   local node="$2"
   local listen="$3"
   local next="${4:-}"
+  local max_requests="${5:-1}"
+  local ack_mode="${6:-normal}"
   case "$lang" in
     rust)
       if [[ -n "$next" ]]; then
         cargo run --quiet --manifest-path rust/Cargo.toml --bin interop -- \
-          --mode server --node "$node" --listen "$listen" --next "$next" --once
+          --mode server --node "$node" --listen "$listen" --next "$next" --max-requests "$max_requests" --ack-mode "$ack_mode"
       else
         cargo run --quiet --manifest-path rust/Cargo.toml --bin interop -- \
-          --mode server --node "$node" --listen "$listen" --once
+          --mode server --node "$node" --listen "$listen" --max-requests "$max_requests" --ack-mode "$ack_mode"
       fi
       ;;
     go)
       if [[ -n "$next" ]]; then
         (cd golang/src && env -u GOROOT go run ./cmd/interop \
-          --mode server --node "$node" --listen "$listen" --next "$next" --once)
+          --mode server --node "$node" --listen "$listen" --next "$next" --max-requests "$max_requests" --ack-mode "$ack_mode")
       else
         (cd golang/src && env -u GOROOT go run ./cmd/interop \
-          --mode server --node "$node" --listen "$listen" --once)
+          --mode server --node "$node" --listen "$listen" --max-requests "$max_requests" --ack-mode "$ack_mode")
       fi
       ;;
     ts)
       if [[ -n "$next" ]]; then
         (cd typescript && npx tsx src/cmd/interop.ts \
-          --mode server --node "$node" --listen "$listen" --next "$next" --once)
+          --mode server --node "$node" --listen "$listen" --next "$next" --max-requests "$max_requests" --ack-mode "$ack_mode")
       else
         (cd typescript && npx tsx src/cmd/interop.ts \
-          --mode server --node "$node" --listen "$listen" --once)
+          --mode server --node "$node" --listen "$listen" --max-requests "$max_requests" --ack-mode "$ack_mode")
       fi
       ;;
     *)
@@ -78,18 +83,35 @@ run_client() {
   local addr="$3"
   local hops="$4"
   local expect_ack_from="$5"
+  local count="${6:-1}"
+  local expect_failure="${7:-0}"
   case "$lang" in
     rust)
-      cargo run --quiet --manifest-path rust/Cargo.toml --bin interop -- \
-        --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from"
+      if [[ "$expect_failure" == "1" ]]; then
+        cargo run --quiet --manifest-path rust/Cargo.toml --bin interop -- \
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --expect-failure
+      else
+        cargo run --quiet --manifest-path rust/Cargo.toml --bin interop -- \
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count"
+      fi
       ;;
     go)
-      (cd golang/src && env -u GOROOT go run ./cmd/interop \
-        --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from")
+      if [[ "$expect_failure" == "1" ]]; then
+        (cd golang/src && env -u GOROOT go run ./cmd/interop \
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --expect-failure)
+      else
+        (cd golang/src && env -u GOROOT go run ./cmd/interop \
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count")
+      fi
       ;;
     ts)
-      (cd typescript && npx tsx src/cmd/interop.ts \
-        --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from")
+      if [[ "$expect_failure" == "1" ]]; then
+        (cd typescript && npx tsx src/cmd/interop.ts \
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --expect-failure)
+      else
+        (cd typescript && npx tsx src/cmd/interop.ts \
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count")
+      fi
       ;;
     *)
       echo "unsupported client lang: $lang" >&2
@@ -113,17 +135,17 @@ TERM_ADDR="${HOST}:${TERM_PORT}"
 MID_ADDR="${HOST}:${MID_PORT}"
 EXPECT_HOPS="${CLIENT_LANG},${MID_LANG},${TERMINAL_LANG}"
 
-run_server "$TERMINAL_LANG" "$TERMINAL_LANG" "$TERM_ADDR" &
+run_server "$TERMINAL_LANG" "$TERMINAL_LANG" "$TERM_ADDR" "" "$COUNT" "$ACK_MODE" &
 TERM_PID=$!
 sleep 0.4
 
-run_server "$MID_LANG" "$MID_LANG" "$MID_ADDR" "$TERM_ADDR" &
+run_server "$MID_LANG" "$MID_LANG" "$MID_ADDR" "$TERM_ADDR" "$COUNT" "normal" &
 MID_PID=$!
 sleep 0.4
 
-run_client "$CLIENT_LANG" "$CLIENT_LANG" "$MID_ADDR" "$EXPECT_HOPS" "$TERMINAL_LANG"
+run_client "$CLIENT_LANG" "$CLIENT_LANG" "$MID_ADDR" "$EXPECT_HOPS" "$TERMINAL_LANG" "$COUNT" "$EXPECT_FAILURE"
 
 wait "$MID_PID"
 wait "$TERM_PID"
 
-echo "PASS ${CLIENT_LANG}->${MID_LANG}->${TERMINAL_LANG} interop"
+echo "PASS ${CLIENT_LANG}->${MID_LANG}->${TERMINAL_LANG} interop count=${COUNT} ack_mode=${ACK_MODE}"

@@ -22,6 +22,8 @@ Current cross-language coverage:
 - `rust -> go -> typescript`
 - `typescript -> rust -> go`
 - ACK round-trip validation: terminal node must return `Ack` with valid correlation fields (`ack_msg_id`, `ack_from_id`, `ack_to_id`, `ack_version`).
+- Multi-message sessions: each topology test sends multiple messages (`count > 1`) against a single server lifecycle.
+- Negative live-network cases: malformed terminal ACK injection (`missing_ack_msg_id`, `bad_ack_version`) must be rejected by clients.
 
 Runners:
 
@@ -37,4 +39,5 @@ Execution commands:
 4. `cd typescript && npm test`
 5. `./conformance/e2e/test_go_ts_rust.sh`
 6. `./conformance/e2e/test_all_topologies.sh`
-7. `./make.sh interop test`
+7. `./conformance/e2e/test_negative_cases.sh`
+8. `./make.sh interop test`

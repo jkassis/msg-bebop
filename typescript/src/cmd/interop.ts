@@ -87,9 +87,17 @@ async function forward(next: string, env: Envelope): Promise<Envelope> {
   })
 }
 
-async function runServer(listen: string, node: string, next?: string, once = false): Promise<void> {
+async function runServerWithLimit(
+  listen: string,
+  node: string,
+  next: string | undefined,
+  once: boolean,
+  maxRequests: number,
+  ackMode: string,
+): Promise<void> {
   const [host, portRaw] = listen.split(':')
   const port = Number(portRaw)
+  let handled = 0
   const server = net.createServer((conn) => {
     void (async () => {
       try {
@@ -103,16 +111,17 @@ async function runServer(listen: string, node: string, next?: string, once = fal
             to_ids: [req.msg.from_id],
             type_: 'Ack',
             version: req.msg.version,
-            ack_msg_id: req.msg.id,
+            ack_msg_id: ackMode === 'missing_ack_msg_id' ? undefined : req.msg.id,
             ack_from_id: node,
             ack_to_id: req.msg.from_id,
-            ack_version: req.msg.version,
+            ack_version: ackMode === 'bad_ack_version' ? req.msg.version + 1 : req.msg.version,
           },
           hops: req.hops,
         }
         await writeJSONLine(conn, resp)
         conn.end()
-        if (once) {
+        handled += 1
+        if (once || (maxRequests > 0 && handled >= maxRequests)) {
           server.close()
         }
       } catch {
@@ -129,59 +138,65 @@ async function runServer(listen: string, node: string, next?: string, once = fal
   })
 }
 
-async function runClient(addr: string, node: string, expectHops: string[], expectAckFrom: string): Promise<void> {
+async function runClient(
+  addr: string,
+  node: string,
+  expectHops: string[],
+  expectAckFrom: string,
+  count: number,
+  expectFailure: boolean,
+): Promise<void> {
   const [host, portRaw] = addr.split(':')
   const port = Number(portRaw)
-  await new Promise<void>((resolve, reject) => {
-    const conn = net.createConnection({ host, port }, async () => {
-      try {
-        const req: Envelope = {
-          msg: {
-            body: 'interop',
-            from_id: node,
-            id: 'interop-msg',
-            to_ids: ['receiver'],
-            type_: 'text',
-            version: 1,
-          },
-          hops: [node],
+  let sawFailure = false
+  for (let i = 0; i < count; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise<void>((resolve, reject) => {
+      const conn = net.createConnection({ host, port }, async () => {
+        try {
+          const req: Envelope = {
+            msg: {
+              body: 'interop',
+              from_id: node,
+              id: `interop-msg-${i}`,
+              to_ids: ['receiver'],
+              type_: 'text',
+              version: 1,
+            },
+            hops: [node],
+          }
+          await writeJSONLine(conn, req)
+          const resp = await readJSONLine(conn)
+          conn.end()
+          const valid = JSON.stringify(resp.hops) === JSON.stringify(expectHops)
+            && resp.msg.type_ === 'Ack'
+            && resp.msg.ack_msg_id === req.msg.id
+            && resp.msg.ack_from_id === expectAckFrom
+            && resp.msg.ack_to_id === node
+            && resp.msg.ack_version === req.msg.version
+          if (!valid) {
+            sawFailure = true
+            if (!expectFailure) {
+              reject(new Error(`interop validation failed for message ${i}`))
+              return
+            }
+          } else if (expectFailure) {
+            reject(new Error('expected failure but got valid ack'))
+            return
+          }
+          resolve()
+        } catch (err) {
+          conn.destroy()
+          reject(err)
         }
-        await writeJSONLine(conn, req)
-        const resp = await readJSONLine(conn)
-        conn.end()
-        if (JSON.stringify(resp.hops) !== JSON.stringify(expectHops)) {
-          reject(new Error(`unexpected hops: got ${JSON.stringify(resp.hops)} want ${JSON.stringify(expectHops)}`))
-          return
-        }
-        if (resp.msg.type_ !== 'Ack') {
-          reject(new Error(`expected Ack response, got ${resp.msg.type_}`))
-          return
-        }
-        if (resp.msg.ack_msg_id !== req.msg.id) {
-          reject(new Error('ack_msg_id mismatch'))
-          return
-        }
-        if (resp.msg.ack_from_id !== expectAckFrom) {
-          reject(new Error('ack_from_id mismatch'))
-          return
-        }
-        if (resp.msg.ack_to_id !== node) {
-          reject(new Error('ack_to_id mismatch'))
-          return
-        }
-        if (resp.msg.ack_version !== req.msg.version) {
-          reject(new Error('ack_version mismatch'))
-          return
-        }
-        console.log(`OK hops=${JSON.stringify(resp.hops)}`)
-        resolve()
-      } catch (err) {
-        conn.destroy()
-        reject(err)
-      }
+      })
+      conn.on('error', reject)
     })
-    conn.on('error', reject)
-  })
+  }
+  if (expectFailure && !sawFailure) {
+    throw new Error('expected at least one validation failure but saw none')
+  }
+  console.log(`OK count=${count} hops=${JSON.stringify(expectHops)}`)
 }
 
 async function main(): Promise<void> {
@@ -191,14 +206,24 @@ async function main(): Promise<void> {
   if (mode === 'server') {
     if (typeof args.listen !== 'string') throw new Error('missing --listen')
     const next = typeof args.next === 'string' ? args.next : undefined
-    await runServer(args.listen, node, next, args.once === true)
+    const maxRequests = typeof args['max-requests'] === 'string' ? Number(args['max-requests']) : 0
+    const ackMode = typeof args['ack-mode'] === 'string' ? args['ack-mode'] : 'normal'
+    await runServerWithLimit(args.listen, node, next, args.once === true, maxRequests, ackMode)
     return
   }
   if (mode === 'client') {
     if (typeof args.addr !== 'string' || typeof args['expect-hops'] !== 'string' || typeof args['expect-ack-from'] !== 'string') {
       throw new Error('missing --addr, --expect-hops, or --expect-ack-from')
     }
-    await runClient(args.addr, node, args['expect-hops'].split(','), args['expect-ack-from'])
+    const count = typeof args.count === 'string' ? Number(args.count) : 1
+    await runClient(
+      args.addr,
+      node,
+      args['expect-hops'].split(','),
+      args['expect-ack-from'],
+      count,
+      args['expect-failure'] === true,
+    )
     return
   }
   throw new Error(`unsupported mode: ${String(mode)}`)
