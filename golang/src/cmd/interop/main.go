@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 )
 
 type Msg struct {
@@ -49,7 +50,7 @@ func readJSONLine(conn net.Conn, out any) error {
 	return json.Unmarshal([]byte(line), out)
 }
 
-func runServer(listen string, node string, next string, once bool, maxRequests int, ackMode string) error {
+func runServer(listen string, node string, next string, once bool, maxRequests int, ackMode string, dropFirst bool) error {
 	ln, err := net.Listen("tcp", listen)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", listen, err)
@@ -61,6 +62,11 @@ func runServer(listen string, node string, next string, once bool, maxRequests i
 		conn, err := ln.Accept()
 		if err != nil {
 			return err
+		}
+		if dropFirst && handled == 0 {
+			handled++
+			_ = conn.Close()
+			continue
 		}
 
 		var in Envelope
@@ -130,51 +136,56 @@ func runServer(listen string, node string, next string, once bool, maxRequests i
 	}
 }
 
-func runClient(addr string, node string, expectHops []string, expectAckFrom string, count int, expectFailure bool) error {
+func runClient(addr string, node string, expectHops []string, expectAckFrom string, count int, expectFailure bool, retries int, retryDelayMS int, timeoutMS int) error {
 	sawFailure := false
 	for i := 0; i < count; i++ {
-		conn, err := net.Dial("tcp", addr)
-		if err != nil {
-			return err
-		}
-
-		msg := Msg{
-			Body:    "interop",
-			FromID:  node,
-			ID:      fmt.Sprintf("interop-msg-%d", i),
-			ToIDs:   []string{"receiver"},
-			Type:    "text",
-			Version: 1,
-		}
-		req := Envelope{
-			Msg:  msg,
-			Hops: []string{node},
-		}
-		if err := writeJSONLine(conn, req); err != nil {
-			_ = conn.Close()
-			return err
-		}
-		var resp Envelope
-		if err := readJSONLine(conn, &resp); err != nil {
-			_ = conn.Close()
-			return err
-		}
-		_ = conn.Close()
-
-		valid := slices.Equal(resp.Hops, expectHops) &&
-			resp.Msg.Type == "Ack" &&
-			resp.Msg.AckMsgID != nil && *resp.Msg.AckMsgID == req.Msg.ID &&
-			resp.Msg.AckFromID != nil && *resp.Msg.AckFromID == expectAckFrom &&
-			resp.Msg.AckToID != nil && *resp.Msg.AckToID == node &&
-			resp.Msg.AckVer != nil && *resp.Msg.AckVer == req.Msg.Version
-
-		if !valid {
-			sawFailure = true
-			if !expectFailure {
-				return fmt.Errorf("interop validation failed for message %d", i)
+		success := false
+		for attempt := 0; attempt <= retries; attempt++ {
+			conn, err := net.Dial("tcp", addr)
+			if err != nil {
+				return err
 			}
-		} else if expectFailure {
-			return fmt.Errorf("expected failure but got valid ack")
+			_ = conn.SetDeadline(time.Now().Add(time.Duration(timeoutMS) * time.Millisecond))
+
+			msg := Msg{
+				Body:    "interop",
+				FromID:  node,
+				ID:      fmt.Sprintf("interop-msg-%d", i),
+				ToIDs:   []string{"receiver"},
+				Type:    "text",
+				Version: 1,
+			}
+			req := Envelope{
+				Msg:  msg,
+				Hops: []string{node},
+			}
+			valid := false
+			if err := writeJSONLine(conn, req); err == nil {
+				var resp Envelope
+				if err := readJSONLine(conn, &resp); err == nil {
+					valid = slices.Equal(resp.Hops, expectHops) &&
+						resp.Msg.Type == "Ack" &&
+						resp.Msg.AckMsgID != nil && *resp.Msg.AckMsgID == req.Msg.ID &&
+						resp.Msg.AckFromID != nil && *resp.Msg.AckFromID == expectAckFrom &&
+						resp.Msg.AckToID != nil && *resp.Msg.AckToID == node &&
+						resp.Msg.AckVer != nil && *resp.Msg.AckVer == req.Msg.Version
+				}
+			}
+			_ = conn.Close()
+			if valid {
+				success = true
+				if expectFailure {
+					return fmt.Errorf("expected failure but got valid ack")
+				}
+				break
+			}
+			sawFailure = true
+			if attempt < retries {
+				time.Sleep(time.Duration(retryDelayMS) * time.Millisecond)
+			}
+		}
+		if !success && !expectFailure {
+			return fmt.Errorf("interop validation failed for message %d", i)
 		}
 	}
 	if expectFailure && !sawFailure {
@@ -196,6 +207,10 @@ func main() {
 	maxRequests := flag.Int("max-requests", 0, "max server requests before exit")
 	ackMode := flag.String("ack-mode", "normal", "normal|missing_ack_msg_id|bad_ack_version")
 	expectFailure := flag.Bool("expect-failure", false, "client expects invalid ack validation")
+	retries := flag.Int("retries", 0, "client retries per message")
+	retryDelayMS := flag.Int("retry-delay-ms", 100, "client retry delay in milliseconds")
+	timeoutMS := flag.Int("timeout-ms", 2000, "client timeout in milliseconds")
+	dropFirst := flag.Bool("drop-first", false, "server drops first request connection")
 	once := flag.Bool("once", false, "serve a single request then exit")
 	flag.Parse()
 
@@ -205,13 +220,13 @@ func main() {
 		if *listen == "" {
 			err = errors.New("missing -listen")
 		} else {
-			err = runServer(*listen, *node, *next, *once, *maxRequests, *ackMode)
+			err = runServer(*listen, *node, *next, *once, *maxRequests, *ackMode, *dropFirst)
 		}
 	case "client":
 		if *addr == "" || *expect == "" || *expectAckFrom == "" {
 			err = errors.New("missing -addr, -expect-hops, or -expect-ack-from")
 		} else {
-			err = runClient(*addr, *node, strings.Split(*expect, ","), *expectAckFrom, *count, *expectFailure)
+			err = runClient(*addr, *node, strings.Split(*expect, ","), *expectAckFrom, *count, *expectFailure, *retries, *retryDelayMS, *timeoutMS)
 		}
 	default:
 		err = fmt.Errorf("unsupported mode %q", *mode)

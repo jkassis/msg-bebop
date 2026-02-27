@@ -94,6 +94,7 @@ async function runServerWithLimit(
   once: boolean,
   maxRequests: number,
   ackMode: string,
+  dropFirst: boolean,
 ): Promise<void> {
   const [host, portRaw] = listen.split(':')
   const port = Number(portRaw)
@@ -102,6 +103,14 @@ async function runServerWithLimit(
     void (async () => {
       try {
         const req = await readJSONLine(conn)
+        if (dropFirst && handled === 0) {
+          handled += 1
+          conn.destroy()
+          if (once || (maxRequests > 0 && handled >= maxRequests)) {
+            server.close()
+          }
+          return
+        }
         req.hops.push(node)
         const resp = next ? await forward(next, req) : {
           msg: {
@@ -145,53 +154,69 @@ async function runClient(
   expectAckFrom: string,
   count: number,
   expectFailure: boolean,
+  retries: number,
+  retryDelayMS: number,
+  timeoutMS: number,
 ): Promise<void> {
   const [host, portRaw] = addr.split(':')
   const port = Number(portRaw)
   let sawFailure = false
   for (let i = 0; i < count; i += 1) {
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise<void>((resolve, reject) => {
-      const conn = net.createConnection({ host, port }, async () => {
-        try {
-          const req: Envelope = {
-            msg: {
-              body: 'interop',
-              from_id: node,
-              id: `interop-msg-${i}`,
-              to_ids: ['receiver'],
-              type_: 'text',
-              version: 1,
-            },
-            hops: [node],
-          }
-          await writeJSONLine(conn, req)
-          const resp = await readJSONLine(conn)
-          conn.end()
-          const valid = JSON.stringify(resp.hops) === JSON.stringify(expectHops)
-            && resp.msg.type_ === 'Ack'
-            && resp.msg.ack_msg_id === req.msg.id
-            && resp.msg.ack_from_id === expectAckFrom
-            && resp.msg.ack_to_id === node
-            && resp.msg.ack_version === req.msg.version
-          if (!valid) {
-            sawFailure = true
-            if (!expectFailure) {
-              reject(new Error(`interop validation failed for message ${i}`))
-              return
+    let success = false
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const valid = await new Promise<boolean>((resolve) => {
+        const conn = net.createConnection({ host, port }, async () => {
+          const timer = setTimeout(() => {
+            conn.destroy()
+            resolve(false)
+          }, timeoutMS)
+          try {
+            const req: Envelope = {
+              msg: {
+                body: 'interop',
+                from_id: node,
+                id: `interop-msg-${i}`,
+                to_ids: ['receiver'],
+                type_: 'text',
+                version: 1,
+              },
+              hops: [node],
             }
-          } else if (expectFailure) {
-            reject(new Error('expected failure but got valid ack'))
-            return
+            await writeJSONLine(conn, req)
+            const resp = await readJSONLine(conn)
+            conn.end()
+            clearTimeout(timer)
+            resolve(
+              JSON.stringify(resp.hops) === JSON.stringify(expectHops)
+                && resp.msg.type_ === 'Ack'
+                && resp.msg.ack_msg_id === req.msg.id
+                && resp.msg.ack_from_id === expectAckFrom
+                && resp.msg.ack_to_id === node
+                && resp.msg.ack_version === req.msg.version,
+            )
+          } catch {
+            clearTimeout(timer)
+            conn.destroy()
+            resolve(false)
           }
-          resolve()
-        } catch (err) {
-          conn.destroy()
-          reject(err)
-        }
+        })
+        conn.on('error', () => resolve(false))
       })
-      conn.on('error', reject)
-    })
+      if (valid) {
+        success = true
+        if (expectFailure) throw new Error('expected failure but got valid ack')
+        break
+      }
+      sawFailure = true
+      if (attempt < retries) {
+        // eslint-disable-next-line no-await-in-loop
+        await new Promise((r) => setTimeout(r, retryDelayMS))
+      }
+    }
+    if (!success && !expectFailure) {
+      throw new Error(`interop validation failed for message ${i}`)
+    }
   }
   if (expectFailure && !sawFailure) {
     throw new Error('expected at least one validation failure but saw none')
@@ -208,7 +233,7 @@ async function main(): Promise<void> {
     const next = typeof args.next === 'string' ? args.next : undefined
     const maxRequests = typeof args['max-requests'] === 'string' ? Number(args['max-requests']) : 0
     const ackMode = typeof args['ack-mode'] === 'string' ? args['ack-mode'] : 'normal'
-    await runServerWithLimit(args.listen, node, next, args.once === true, maxRequests, ackMode)
+    await runServerWithLimit(args.listen, node, next, args.once === true, maxRequests, ackMode, args['drop-first'] === true)
     return
   }
   if (mode === 'client') {
@@ -216,6 +241,9 @@ async function main(): Promise<void> {
       throw new Error('missing --addr, --expect-hops, or --expect-ack-from')
     }
     const count = typeof args.count === 'string' ? Number(args.count) : 1
+    const retries = typeof args.retries === 'string' ? Number(args.retries) : 0
+    const retryDelayMS = typeof args['retry-delay-ms'] === 'string' ? Number(args['retry-delay-ms']) : 100
+    const timeoutMS = typeof args['timeout-ms'] === 'string' ? Number(args['timeout-ms']) : 2000
     await runClient(
       args.addr,
       node,
@@ -223,6 +251,9 @@ async function main(): Promise<void> {
       args['expect-ack-from'],
       count,
       args['expect-failure'] === true,
+      retries,
+      retryDelayMS,
+      timeoutMS,
     )
     return
   }

@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
+use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Envelope {
@@ -24,6 +25,15 @@ fn parse_usize_arg(args: &[String], key: &str, default: usize) -> Result<usize, 
     match parse_arg(args, key) {
         Some(v) => v
             .parse::<usize>()
+            .map_err(|e| format!("invalid --{key} value {v}: {e}")),
+        None => Ok(default),
+    }
+}
+
+fn parse_u64_arg(args: &[String], key: &str, default: u64) -> Result<u64, String> {
+    match parse_arg(args, key) {
+        Some(v) => v
+            .parse::<u64>()
             .map_err(|e| format!("invalid --{key} value {v}: {e}")),
         None => Ok(default),
     }
@@ -56,6 +66,7 @@ fn run_server(
     once: bool,
     max_requests: Option<usize>,
     ack_mode: &str,
+    drop_first: bool,
 ) -> Result<(), String> {
     let listener = TcpListener::bind(listen).map_err(|e| format!("bind {listen} failed: {e}"))?;
     let mut handled = 0usize;
@@ -63,6 +74,10 @@ fn run_server(
         let (mut conn, _addr) = listener
             .accept()
             .map_err(|e| format!("accept failed: {e}"))?;
+        if drop_first && handled == 0 {
+            handled += 1;
+            continue;
+        }
         let mut env: Envelope = read_line_json(&conn)?;
         env.hops.push(node.to_string());
 
@@ -113,42 +128,65 @@ fn run_client(
     expect_ack_from: &str,
     count: usize,
     expect_failure: bool,
+    retries: usize,
+    retry_delay_ms: u64,
+    timeout_ms: u64,
 ) -> Result<(), String> {
     let mut saw_failure = false;
     for i in 0..count {
-        let mut stream =
-            TcpStream::connect(addr).map_err(|e| format!("dial {addr} failed: {e}"))?;
-        let msg_id = format!("interop-msg-{i}");
-        let env = Envelope {
-            msg: Msg {
-                body: "interop".to_string(),
-                from_id: node.to_string(),
-                id: msg_id,
-                to_ids: vec!["receiver".to_string()],
-                type_: "text".to_string(),
-                version: 1,
-                ack_msg_id: None,
-                ack_from_id: None,
-                ack_to_id: None,
-                ack_version: None,
-            },
-            hops: vec![node.to_string()],
-        };
-        write_line_json(&mut stream, &env)?;
-        let response: Envelope = read_line_json(&stream)?;
-        let valid = response.hops == expect_hops
-            && response.msg.type_ == "Ack"
-            && response.msg.ack_msg_id.as_deref() == Some(env.msg.id.as_str())
-            && response.msg.ack_from_id.as_deref() == Some(expect_ack_from)
-            && response.msg.ack_to_id.as_deref() == Some(node)
-            && response.msg.ack_version == Some(env.msg.version);
-        if !valid {
-            saw_failure = true;
-            if !expect_failure {
-                return Err(format!("interop validation failed for message {i}"));
+        let mut success = false;
+        for attempt in 0..=retries {
+            let mut stream =
+                TcpStream::connect(addr).map_err(|e| format!("dial {addr} failed: {e}"))?;
+            stream
+                .set_read_timeout(Some(Duration::from_millis(timeout_ms)))
+                .map_err(|e| format!("set_read_timeout failed: {e}"))?;
+            stream
+                .set_write_timeout(Some(Duration::from_millis(timeout_ms)))
+                .map_err(|e| format!("set_write_timeout failed: {e}"))?;
+            let msg_id = format!("interop-msg-{i}");
+            let env = Envelope {
+                msg: Msg {
+                    body: "interop".to_string(),
+                    from_id: node.to_string(),
+                    id: msg_id,
+                    to_ids: vec!["receiver".to_string()],
+                    type_: "text".to_string(),
+                    version: 1,
+                    ack_msg_id: None,
+                    ack_from_id: None,
+                    ack_to_id: None,
+                    ack_version: None,
+                },
+                hops: vec![node.to_string()],
+            };
+            let valid = match write_line_json(&mut stream, &env)
+                .and_then(|_| read_line_json::<Envelope>(&stream))
+                .map(|response| {
+                    response.hops == expect_hops
+                        && response.msg.type_ == "Ack"
+                        && response.msg.ack_msg_id.as_deref() == Some(env.msg.id.as_str())
+                        && response.msg.ack_from_id.as_deref() == Some(expect_ack_from)
+                        && response.msg.ack_to_id.as_deref() == Some(node)
+                        && response.msg.ack_version == Some(env.msg.version)
+                }) {
+                Ok(v) => v,
+                Err(_) => false,
+            };
+            if valid {
+                success = true;
+                if expect_failure {
+                    return Err("expected failure but received valid ack".to_string());
+                }
+                break;
             }
-        } else if expect_failure {
-            return Err("expected failure but received valid ack".to_string());
+            saw_failure = true;
+            if attempt < retries {
+                std::thread::sleep(Duration::from_millis(retry_delay_ms));
+            }
+        }
+        if !success && !expect_failure {
+            return Err(format!("interop validation failed for message {i}"));
         }
     }
     if expect_failure && !saw_failure {
@@ -175,6 +213,7 @@ fn main() -> Result<(), String> {
                 })
                 .transpose()?;
             let ack_mode = parse_arg(&args, "ack-mode").unwrap_or_else(|| "normal".to_string());
+            let drop_first = has_flag(&args, "drop-first");
             run_server(
                 &listen,
                 &node,
@@ -182,6 +221,7 @@ fn main() -> Result<(), String> {
                 has_flag(&args, "once"),
                 max_requests,
                 &ack_mode,
+                drop_first,
             )
         }
         "client" => {
@@ -192,6 +232,9 @@ fn main() -> Result<(), String> {
                 .ok_or_else(|| "missing --expect-ack-from".to_string())?;
             let expect_hops = expect.split(',').map(|s| s.to_string()).collect::<Vec<_>>();
             let count = parse_usize_arg(&args, "count", 1)?;
+            let retries = parse_usize_arg(&args, "retries", 0)?;
+            let retry_delay_ms = parse_u64_arg(&args, "retry-delay-ms", 100)?;
+            let timeout_ms = parse_u64_arg(&args, "timeout-ms", 2000)?;
             run_client(
                 &addr,
                 &node,
@@ -199,6 +242,9 @@ fn main() -> Result<(), String> {
                 &expect_ack_from,
                 count,
                 has_flag(&args, "expect-failure"),
+                retries,
+                retry_delay_ms,
+                timeout_ms,
             )
         }
         _ => Err(format!("unsupported mode: {mode}")),

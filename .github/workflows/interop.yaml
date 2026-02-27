@@ -28,4 +28,14 @@ jobs:
         run: yarn install --cwd typescript --frozen-lockfile
 
       - name: Run Interop Matrix
-        run: ./make.sh interop test
+        run: |
+          rm -rf conformance/e2e/logs
+          mkdir -p conformance/e2e/logs
+          ./make.sh interop test
+
+      - name: Upload Interop Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-logs
+          path: conformance/e2e/logs

@@ -7,13 +7,20 @@ TOPOLOGY="${1:-go,ts,rust}"
 COUNT="${2:-1}"
 ACK_MODE="${3:-normal}"
 EXPECT_FAILURE="${4:-0}"
+DROP_FIRST="${5:-0}"
+RETRIES="${6:-0}"
+RETRY_DELAY_MS="${7:-100}"
+TIMEOUT_MS="${8:-2000}"
 HOST="127.0.0.1"
+LOG_DIR="${ROOT}/conformance/e2e/logs"
+mkdir -p "$LOG_DIR"
 
 IFS=',' read -r CLIENT_LANG MID_LANG TERMINAL_LANG <<<"$TOPOLOGY"
 if [[ -z "${CLIENT_LANG}" || -z "${MID_LANG}" || -z "${TERMINAL_LANG}" ]]; then
   echo "usage: $0 <client,mid,terminal>" >&2
   exit 1
 fi
+LOG_PREFIX="${LOG_DIR}/$(date +%Y%m%d-%H%M%S)-${CLIENT_LANG}-${MID_LANG}-${TERMINAL_LANG}"
 
 port_in_use() {
   local port="$1"
@@ -42,32 +49,39 @@ run_server() {
   local next="${4:-}"
   local max_requests="${5:-1}"
   local ack_mode="${6:-normal}"
+  local drop_first="${7:-0}"
   case "$lang" in
     rust)
+      local drop_flag=""
+      if [[ "$drop_first" == "1" ]]; then drop_flag="--drop-first"; fi
       if [[ -n "$next" ]]; then
         cargo run --quiet --manifest-path rust/Cargo.toml --bin interop -- \
-          --mode server --node "$node" --listen "$listen" --next "$next" --max-requests "$max_requests" --ack-mode "$ack_mode"
+          --mode server --node "$node" --listen "$listen" --next "$next" --max-requests "$max_requests" --ack-mode "$ack_mode" $drop_flag
       else
         cargo run --quiet --manifest-path rust/Cargo.toml --bin interop -- \
-          --mode server --node "$node" --listen "$listen" --max-requests "$max_requests" --ack-mode "$ack_mode"
+          --mode server --node "$node" --listen "$listen" --max-requests "$max_requests" --ack-mode "$ack_mode" $drop_flag
       fi
       ;;
     go)
+      local drop_flag=""
+      if [[ "$drop_first" == "1" ]]; then drop_flag="--drop-first"; fi
       if [[ -n "$next" ]]; then
         (cd golang/src && env -u GOROOT go run ./cmd/interop \
-          --mode server --node "$node" --listen "$listen" --next "$next" --max-requests "$max_requests" --ack-mode "$ack_mode")
+          --mode server --node "$node" --listen "$listen" --next "$next" --max-requests "$max_requests" --ack-mode "$ack_mode" $drop_flag)
       else
         (cd golang/src && env -u GOROOT go run ./cmd/interop \
-          --mode server --node "$node" --listen "$listen" --max-requests "$max_requests" --ack-mode "$ack_mode")
+          --mode server --node "$node" --listen "$listen" --max-requests "$max_requests" --ack-mode "$ack_mode" $drop_flag)
       fi
       ;;
     ts)
+      local drop_flag=""
+      if [[ "$drop_first" == "1" ]]; then drop_flag="--drop-first"; fi
       if [[ -n "$next" ]]; then
         (cd typescript && npx tsx src/cmd/interop.ts \
-          --mode server --node "$node" --listen "$listen" --next "$next" --max-requests "$max_requests" --ack-mode "$ack_mode")
+          --mode server --node "$node" --listen "$listen" --next "$next" --max-requests "$max_requests" --ack-mode "$ack_mode" $drop_flag)
       else
         (cd typescript && npx tsx src/cmd/interop.ts \
-          --mode server --node "$node" --listen "$listen" --max-requests "$max_requests" --ack-mode "$ack_mode")
+          --mode server --node "$node" --listen "$listen" --max-requests "$max_requests" --ack-mode "$ack_mode" $drop_flag)
       fi
       ;;
     *)
@@ -85,32 +99,35 @@ run_client() {
   local expect_ack_from="$5"
   local count="${6:-1}"
   local expect_failure="${7:-0}"
+  local retries="${8:-0}"
+  local retry_delay_ms="${9:-100}"
+  local timeout_ms="${10:-2000}"
   case "$lang" in
     rust)
       if [[ "$expect_failure" == "1" ]]; then
         cargo run --quiet --manifest-path rust/Cargo.toml --bin interop -- \
-          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --expect-failure
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --retries "$retries" --retry-delay-ms "$retry_delay_ms" --timeout-ms "$timeout_ms" --expect-failure
       else
         cargo run --quiet --manifest-path rust/Cargo.toml --bin interop -- \
-          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count"
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --retries "$retries" --retry-delay-ms "$retry_delay_ms" --timeout-ms "$timeout_ms"
       fi
       ;;
     go)
       if [[ "$expect_failure" == "1" ]]; then
         (cd golang/src && env -u GOROOT go run ./cmd/interop \
-          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --expect-failure)
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --retries "$retries" --retry-delay-ms "$retry_delay_ms" --timeout-ms "$timeout_ms" --expect-failure)
       else
         (cd golang/src && env -u GOROOT go run ./cmd/interop \
-          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count")
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --retries "$retries" --retry-delay-ms "$retry_delay_ms" --timeout-ms "$timeout_ms")
       fi
       ;;
     ts)
       if [[ "$expect_failure" == "1" ]]; then
         (cd typescript && npx tsx src/cmd/interop.ts \
-          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --expect-failure)
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --retries "$retries" --retry-delay-ms "$retry_delay_ms" --timeout-ms "$timeout_ms" --expect-failure)
       else
         (cd typescript && npx tsx src/cmd/interop.ts \
-          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count")
+          --mode client --node "$node" --addr "$addr" --expect-hops "$hops" --expect-ack-from "$expect_ack_from" --count "$count" --retries "$retries" --retry-delay-ms "$retry_delay_ms" --timeout-ms "$timeout_ms")
       fi
       ;;
     *)
@@ -134,18 +151,25 @@ while [[ "$TERM_PORT" == "$MID_PORT" ]]; do TERM_PORT="$(pick_port)"; done
 TERM_ADDR="${HOST}:${TERM_PORT}"
 MID_ADDR="${HOST}:${MID_PORT}"
 EXPECT_HOPS="${CLIENT_LANG},${MID_LANG},${TERMINAL_LANG}"
+EXTRA_REQUESTS=0
+if [[ "$DROP_FIRST" == "1" ]]; then
+  EXTRA_REQUESTS=1
+fi
+MID_EXPECTED_REQUESTS=$((COUNT + EXTRA_REQUESTS))
+TERM_EXPECTED_REQUESTS=$COUNT
 
-run_server "$TERMINAL_LANG" "$TERMINAL_LANG" "$TERM_ADDR" "" "$COUNT" "$ACK_MODE" &
+run_server "$TERMINAL_LANG" "$TERMINAL_LANG" "$TERM_ADDR" "" "$TERM_EXPECTED_REQUESTS" "$ACK_MODE" "0" >"${LOG_PREFIX}.terminal.log" 2>&1 &
 TERM_PID=$!
 sleep 0.4
 
-run_server "$MID_LANG" "$MID_LANG" "$MID_ADDR" "$TERM_ADDR" "$COUNT" "normal" &
+run_server "$MID_LANG" "$MID_LANG" "$MID_ADDR" "$TERM_ADDR" "$MID_EXPECTED_REQUESTS" "normal" "$DROP_FIRST" >"${LOG_PREFIX}.mid.log" 2>&1 &
 MID_PID=$!
 sleep 0.4
 
-run_client "$CLIENT_LANG" "$CLIENT_LANG" "$MID_ADDR" "$EXPECT_HOPS" "$TERMINAL_LANG" "$COUNT" "$EXPECT_FAILURE"
+run_client "$CLIENT_LANG" "$CLIENT_LANG" "$MID_ADDR" "$EXPECT_HOPS" "$TERMINAL_LANG" "$COUNT" "$EXPECT_FAILURE" "$RETRIES" "$RETRY_DELAY_MS" "$TIMEOUT_MS" >"${LOG_PREFIX}.client.log" 2>&1
 
 wait "$MID_PID"
 wait "$TERM_PID"
 
-echo "PASS ${CLIENT_LANG}->${MID_LANG}->${TERMINAL_LANG} interop count=${COUNT} ack_mode=${ACK_MODE}"
+echo "PASS ${CLIENT_LANG}->${MID_LANG}->${TERMINAL_LANG} interop count=${COUNT} ack_mode=${ACK_MODE} drop_first=${DROP_FIRST}"
+echo "{\"topology\":\"${CLIENT_LANG},${MID_LANG},${TERMINAL_LANG}\",\"count\":${COUNT},\"ack_mode\":\"${ACK_MODE}\",\"drop_first\":${DROP_FIRST},\"expect_failure\":${EXPECT_FAILURE},\"retries\":${RETRIES},\"status\":\"pass\"}" >"${LOG_PREFIX}.summary.json"
