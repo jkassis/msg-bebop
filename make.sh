@@ -411,6 +411,8 @@ interop_cmd() {
   test)
     echo "→ Running cross-language interop e2e topology matrix..."
     ./conformance/e2e/test_all_topologies.sh "$@"
+    echo "→ Running cross-language interop relay fault cases..."
+    ./conformance/e2e/test_relay_faults.sh "$@"
     echo "→ Running cross-language interop retry recovery cases..."
     ./conformance/e2e/test_retry_recovery.sh "$@"
     echo "→ Running cross-language interop negative cases..."

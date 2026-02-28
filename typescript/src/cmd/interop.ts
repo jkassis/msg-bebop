@@ -95,22 +95,30 @@ async function runServerWithLimit(
   maxRequests: number,
   ackMode: string,
   dropFirst: boolean,
+  delayMS: number,
 ): Promise<void> {
   const [host, portRaw] = listen.split(':')
   const port = Number(portRaw)
   let handled = 0
   const server = net.createServer((conn) => {
     void (async () => {
+      const requestIndex = handled
+      handled += 1
+      const maybeClose = (): void => {
+        if (once || (maxRequests > 0 && handled >= maxRequests)) {
+          server.close()
+        }
+      }
       try {
-        const req = await readJSONLine(conn)
-        if (dropFirst && handled === 0) {
-          handled += 1
+        if (delayMS > 0) {
+          await new Promise((r) => setTimeout(r, delayMS))
+        }
+        if (dropFirst && requestIndex === 0) {
           conn.destroy()
-          if (once || (maxRequests > 0 && handled >= maxRequests)) {
-            server.close()
-          }
+          maybeClose()
           return
         }
+        const req = await readJSONLine(conn)
         req.hops.push(node)
         const resp = next ? await forward(next, req) : {
           msg: {
@@ -129,19 +137,19 @@ async function runServerWithLimit(
         }
         await writeJSONLine(conn, resp)
         conn.end()
-        handled += 1
-        if (once || (maxRequests > 0 && handled >= maxRequests)) {
-          server.close()
-        }
       } catch {
         conn.destroy()
-        process.exitCode = 1
+      } finally {
+        maybeClose()
       }
     })()
   })
 
   await new Promise<void>((resolve, reject) => {
-    server.listen(port, host, () => resolve())
+    server.listen(port, host, () => {
+      console.error(`INTEROP_READY ${listen}`)
+      resolve()
+    })
     server.on('error', reject)
     server.on('close', () => resolve())
   })
@@ -233,7 +241,8 @@ async function main(): Promise<void> {
     const next = typeof args.next === 'string' ? args.next : undefined
     const maxRequests = typeof args['max-requests'] === 'string' ? Number(args['max-requests']) : 0
     const ackMode = typeof args['ack-mode'] === 'string' ? args['ack-mode'] : 'normal'
-    await runServerWithLimit(args.listen, node, next, args.once === true, maxRequests, ackMode, args['drop-first'] === true)
+    const delayMS = typeof args['delay-ms'] === 'string' ? Number(args['delay-ms']) : 0
+    await runServerWithLimit(args.listen, node, next, args.once === true, maxRequests, ackMode, args['drop-first'] === true, delayMS)
     return
   }
   if (mode === 'client') {

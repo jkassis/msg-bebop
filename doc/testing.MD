@@ -25,7 +25,11 @@ Current cross-language coverage:
 - Multi-message sessions: each topology test sends multiple messages (`count > 1`) against a single server lifecycle.
 - Retry recovery sessions: topology runs with terminal `drop-first` simulation and client retries enabled must still converge.
 - Retry recovery sessions: topology runs with relay `drop-first` simulation and client retries enabled must still converge.
+- Relay fault sessions:
+- `drop_first_forward`: relay drops first forwarded request to simulate transient forwarding loss.
+- `delay_ms`: relay injects per-request handling delay to exercise timeout budgets.
 - Negative live-network cases: malformed terminal ACK injection (`missing_ack_msg_id`, `bad_ack_version`) must be rejected by clients.
+- Runner uses active port health probes before client send (not fixed startup sleeps).
 
 Runners:
 
@@ -43,7 +47,8 @@ Execution commands:
 6. `./conformance/e2e/test_all_topologies.sh`
 7. `./conformance/e2e/test_negative_cases.sh`
 8. `./conformance/e2e/test_retry_recovery.sh`
-9. `./make.sh interop test`
+9. `./conformance/e2e/test_relay_faults.sh`
+10. `./make.sh interop test`
 
 ## Interop Logs
 

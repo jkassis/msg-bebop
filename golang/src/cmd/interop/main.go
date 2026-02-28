@@ -50,12 +50,13 @@ func readJSONLine(conn net.Conn, out any) error {
 	return json.Unmarshal([]byte(line), out)
 }
 
-func runServer(listen string, node string, next string, once bool, maxRequests int, ackMode string, dropFirst bool) error {
+func runServer(listen string, node string, next string, once bool, maxRequests int, ackMode string, dropFirst bool, delayMS int) error {
 	ln, err := net.Listen("tcp", listen)
 	if err != nil {
 		return fmt.Errorf("listen %s: %w", listen, err)
 	}
 	defer ln.Close()
+	fmt.Fprintf(os.Stderr, "INTEROP_READY %s\n", listen)
 
 	handled := 0
 	for {
@@ -63,16 +64,26 @@ func runServer(listen string, node string, next string, once bool, maxRequests i
 		if err != nil {
 			return err
 		}
-		if dropFirst && handled == 0 {
-			handled++
+		requestIndex := handled
+		handled++
+		if delayMS > 0 {
+			time.Sleep(time.Duration(delayMS) * time.Millisecond)
+		}
+		if dropFirst && requestIndex == 0 {
 			_ = conn.Close()
+			if once || (maxRequests > 0 && handled >= maxRequests) {
+				return nil
+			}
 			continue
 		}
 
 		var in Envelope
 		if err := readJSONLine(conn, &in); err != nil {
 			_ = conn.Close()
-			return err
+			if once || (maxRequests > 0 && handled >= maxRequests) {
+				return nil
+			}
+			continue
 		}
 		in.Hops = append(in.Hops, node)
 
@@ -81,17 +92,26 @@ func runServer(listen string, node string, next string, once bool, maxRequests i
 			upstream, err := net.Dial("tcp", next)
 			if err != nil {
 				_ = conn.Close()
-				return fmt.Errorf("dial %s: %w", next, err)
+				if once || (maxRequests > 0 && handled >= maxRequests) {
+					return nil
+				}
+				continue
 			}
 			if err := writeJSONLine(upstream, in); err != nil {
 				_ = upstream.Close()
 				_ = conn.Close()
-				return err
+				if once || (maxRequests > 0 && handled >= maxRequests) {
+					return nil
+				}
+				continue
 			}
 			if err := readJSONLine(upstream, &out); err != nil {
 				_ = upstream.Close()
 				_ = conn.Close()
-				return err
+				if once || (maxRequests > 0 && handled >= maxRequests) {
+					return nil
+				}
+				continue
 			}
 			_ = upstream.Close()
 		} else {
@@ -125,11 +145,13 @@ func runServer(listen string, node string, next string, once bool, maxRequests i
 
 		if err := writeJSONLine(conn, out); err != nil {
 			_ = conn.Close()
-			return err
+			if once || (maxRequests > 0 && handled >= maxRequests) {
+				return nil
+			}
+			continue
 		}
 		_ = conn.Close()
 
-		handled++
 		if once || (maxRequests > 0 && handled >= maxRequests) {
 			return nil
 		}
@@ -141,37 +163,36 @@ func runClient(addr string, node string, expectHops []string, expectAckFrom stri
 	for i := 0; i < count; i++ {
 		success := false
 		for attempt := 0; attempt <= retries; attempt++ {
-			conn, err := net.Dial("tcp", addr)
-			if err != nil {
-				return err
-			}
-			_ = conn.SetDeadline(time.Now().Add(time.Duration(timeoutMS) * time.Millisecond))
-
-			msg := Msg{
-				Body:    "interop",
-				FromID:  node,
-				ID:      fmt.Sprintf("interop-msg-%d", i),
-				ToIDs:   []string{"receiver"},
-				Type:    "text",
-				Version: 1,
-			}
-			req := Envelope{
-				Msg:  msg,
-				Hops: []string{node},
-			}
 			valid := false
-			if err := writeJSONLine(conn, req); err == nil {
-				var resp Envelope
-				if err := readJSONLine(conn, &resp); err == nil {
-					valid = slices.Equal(resp.Hops, expectHops) &&
-						resp.Msg.Type == "Ack" &&
-						resp.Msg.AckMsgID != nil && *resp.Msg.AckMsgID == req.Msg.ID &&
-						resp.Msg.AckFromID != nil && *resp.Msg.AckFromID == expectAckFrom &&
-						resp.Msg.AckToID != nil && *resp.Msg.AckToID == node &&
-						resp.Msg.AckVer != nil && *resp.Msg.AckVer == req.Msg.Version
+			conn, err := net.Dial("tcp", addr)
+			if err == nil {
+				_ = conn.SetDeadline(time.Now().Add(time.Duration(timeoutMS) * time.Millisecond))
+
+				msg := Msg{
+					Body:    "interop",
+					FromID:  node,
+					ID:      fmt.Sprintf("interop-msg-%d", i),
+					ToIDs:   []string{"receiver"},
+					Type:    "text",
+					Version: 1,
 				}
+				req := Envelope{
+					Msg:  msg,
+					Hops: []string{node},
+				}
+				if err := writeJSONLine(conn, req); err == nil {
+					var resp Envelope
+					if err := readJSONLine(conn, &resp); err == nil {
+						valid = slices.Equal(resp.Hops, expectHops) &&
+							resp.Msg.Type == "Ack" &&
+							resp.Msg.AckMsgID != nil && *resp.Msg.AckMsgID == req.Msg.ID &&
+							resp.Msg.AckFromID != nil && *resp.Msg.AckFromID == expectAckFrom &&
+							resp.Msg.AckToID != nil && *resp.Msg.AckToID == node &&
+							resp.Msg.AckVer != nil && *resp.Msg.AckVer == req.Msg.Version
+					}
+				}
+				_ = conn.Close()
 			}
-			_ = conn.Close()
 			if valid {
 				success = true
 				if expectFailure {
@@ -211,6 +232,7 @@ func main() {
 	retryDelayMS := flag.Int("retry-delay-ms", 100, "client retry delay in milliseconds")
 	timeoutMS := flag.Int("timeout-ms", 2000, "client timeout in milliseconds")
 	dropFirst := flag.Bool("drop-first", false, "server drops first request connection")
+	delayMS := flag.Int("delay-ms", 0, "server delay before handling each request in milliseconds")
 	once := flag.Bool("once", false, "serve a single request then exit")
 	flag.Parse()
 
@@ -220,7 +242,7 @@ func main() {
 		if *listen == "" {
 			err = errors.New("missing -listen")
 		} else {
-			err = runServer(*listen, *node, *next, *once, *maxRequests, *ackMode, *dropFirst)
+			err = runServer(*listen, *node, *next, *once, *maxRequests, *ackMode, *dropFirst, *delayMS)
 		}
 	case "client":
 		if *addr == "" || *expect == "" || *expectAckFrom == "" {
