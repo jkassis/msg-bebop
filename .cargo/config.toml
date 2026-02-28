@@ -1,1 +1,4 @@
 [workspace]
+
+[build]
+target-dir = "rust/target"
