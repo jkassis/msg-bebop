@@ -223,7 +223,7 @@ pub struct Courier {
     /// # Construction
     /// To construct a [`Courier`], provide the following:
     ///
-    /// - `db`: An implementation of [`courier::db::DB`] for message persistence.
+    /// - `db`: An implementation of [`crate::db::DB`] for message persistence.
     /// - `sender`: An implementation of [`Tx`] to perform outbound message delivery.
     /// - `handler`: A function or closure to handle inbound messages after receipt.
     /// - `pact_factory`: A closure that produces an initial [`Pact`] for each message during [`Courier::tx`].

@@ -5,7 +5,7 @@
 /// # Examples
 ///
 /// ```
-/// use courier::add::add;
+/// use trx::add::add;
 ///
 /// assert_eq!(add(2, 3), 5);
 /// ```

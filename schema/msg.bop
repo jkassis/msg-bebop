@@ -1,4 +1,4 @@
-// msg.bop - Bebop schema for cross-language message serialization
+// Legacy schema path retained for tooling compatibility during trx migration.
 
 // High-performance message structure for polyglot applications
 struct Msg {

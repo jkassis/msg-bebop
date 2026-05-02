@@ -1,26 +1,9 @@
 /**
- * Msg Bebop Library for TypeScript/JavaScript
+ * Legacy generated message package retained for migration scaffolding.
  *
- * High-performance message serialization using Bebop.
- *
- * @example
- * ```typescript
- * import { Msg } from 'msg';
- *
- * const msg = Msg({
- *   body: "Hello, world!",
- *   fromId: "sender123",
- *   id: "msg456",
- *   toIds: ["recipient1", "recipient2"],
- *   type: "greeting"
- * });
- *
- * // Serialize
- * const bytes = msg.encode();
- *
- * // Deserialize
- * const decodedMsg = Msg.decode(bytes);
- * ```
+ * The canonical staged TypeScript `trx` surface for this repo lives under
+ * `src/pkg/trx.ts`. This entrypoint remains for compatibility with older
+ * generated artifacts and tests.
  */
 
 // Re-export generated Bebop types

@@ -62,7 +62,6 @@
    - Base `Tx` / `Rx` error and capability expectations.
 
 2. Complete the shared-library migration plan:
-   - `rustie/msg` -> `rustie/trx`.
    - Create `golangie` and `tscriptie`.
    - Move reliable-delivery code toward `reliable` packages layered on `trx`.
 

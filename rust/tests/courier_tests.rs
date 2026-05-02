@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod courier_tests {
-    use courier::{
+    use trx::{
         context::Context,
         db::{dbtx_to_ctx, DB},
         db_sled::SledDB,

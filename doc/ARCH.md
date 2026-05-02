@@ -12,7 +12,7 @@ That API makes the mechanics of delivery opaque to the caller. Concrete implemen
 
 The current repo contains:
 
-- a **base message abstraction** in `rust/src/rustie/msg/` that is intended to move to `rustie/trx`
+- a **base message abstraction** in `rust/src/rustie/trx/`
 - a **Rust reliable-delivery component** (`Courier`) layered on top of that abstraction
 - fixture/interoperability scaffolding for future Go and TypeScript implementations
 
@@ -362,7 +362,6 @@ Reusable implementation work should flow into shared language submodules:
 
 Target migrations:
 
-- `rustie/msg` -> `rustie/trx`
 - create `golangie/trx`
 - create `tscriptie/trx`
 - move Courier-oriented code toward `reliable` packages built on top of those `trx` packages

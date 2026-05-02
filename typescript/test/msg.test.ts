@@ -1,6 +1,6 @@
 import { Msg, MsgUtils } from '../src';
 
-describe('Msg Bebop Library', () => {
+describe('legacy generated msg package', () => {
   test('basic serialization', () => {
     const original = Msg({
       body: "Hello from TypeScript!",

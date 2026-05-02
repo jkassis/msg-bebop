@@ -1,101 +1,31 @@
-# 🎯 Project Status & Next Steps
+# Status
 
-## ✅ Completed Components
+## Current Position
 
-### 📁 Project Structure
-- [x] **Schema Definition** (`schema/msg.bop`) - Bebop message schema
-- [x] **Language Templates** (`templates/`) - All 6 language package templates  
-- [x] **Build Automation** (`build.sh`, `Makefile`) - Comprehensive build system
-- [x] **Documentation** (`README.md`, `PUBLISHING.md`) - Complete guides
+- Project identity is now `trx`: a transmit/receive messaging foundation.
+- Canonical base API is `Msg`, `Tx`, and `Rx`.
+- Rust is the only implementation with a real runtime/reliable core in this repo.
+- Go and TypeScript currently provide staged `trx` fixtures, conformance helpers, and interop scaffolding.
+- Courier is now treated as a specialized reliable layer built on top of `trx`, not the base API itself.
 
-### 🔧 Build System
-- [x] **Cross-platform** Make & Bash build system
-- [x] **Language-specific** build functions for all 6 languages
-- [x] **Testing framework** with unit tests and examples
-- [x] **Performance benchmarks** integrated
-- [x] **Package validation** before publishing
+## Landed
 
-### 📚 Language Support (Ready for Generation)
-- [x] **Rust** 🦀 - Cargo package with serde integration
-- [x] **TypeScript/JavaScript** 🟨 - NPM package with Jest tests
-- [x] **Go** 🐹 - Go module with standard testing
-- [x] **Python** 🐍 - PyPI package with setuptools/pytest
-- [x] **C#** 🟣 - NuGet package with MSTest
-- [x] **C++** ⚡ - CMake package with header distribution
+- Rust crate root exports `trx` as the canonical public base surface.
+- Rust `Msg.body` now uses raw bytes in memory with base64 in the JSON wire envelope.
+- Rust reliable code lives under `reliable` with `CourierMsg` as the framework-specific wrapper.
+- Cross-language conformance fixtures exist for base `trx` message decoding/defaulting behavior.
+- The legacy `rustie/msg` bridge has been removed from the `rustie` submodule.
 
----
+## Still In Flight
 
-## 🚀 Next Steps (Execution Phase)
+- Shared durable implementations still need to move into `rustie`, `golangie`, and `tscriptie`.
+- Non-Rust language roots in this repo still include migration-era scaffolding and legacy `msg` artifacts.
+- Production transport adapters and production-safe storage backends are still incomplete.
 
-### 1. Install Bebop Compiler
-```bash
-npm install -g bebop
-```
+## Working Rules
 
-### 2. Generate All Libraries
-```bash
-cd /Users/jkassis/Code/msg
-./build.sh
-```
+- Treat this repo as the architecture/spec/interop/conformance repo.
+- Treat shared language submodules as the durable home for reusable library packages.
+- Keep reliable-delivery semantics separate from the canonical outer `trx` envelope.
 
-This will:
-- Generate Bebop code for all 6 languages
-- Build each language library
-- Run comprehensive tests
-- Create distributable packages
-- Generate performance benchmarks
-
-### 3. Test Cross-Language Compatibility
-```bash
-make test-interop
-```
-
-### 4. Publish Libraries (Optional)
-Follow `PUBLISHING.md` guide to publish to:
-- **Rust**: crates.io
-- **TypeScript**: npm  
-- **Go**: GitHub (go modules)
-- **Python**: PyPI
-- **C#**: NuGet
-- **C++**: vcpkg/Conan
-
----
-
-## 📊 Performance Expectations
-
-Based on Bebop benchmarks, your libraries should deliver:
-
-| Metric | vs JSON | vs Protocol Buffers |
-|--------|---------|-------------------|
-| **Serialize Speed** | 8-15x faster | 2-3x faster |
-| **Deserialize Speed** | 10-20x faster | 3-4x faster |
-| **Binary Size** | 40-50% smaller | 15-20% smaller |
-| **Memory Usage** | 60-70% less | 20-30% less |
-
----
-
-## 🎯 Use Cases
-
-Your polyglot Bebop library is perfect for:
-
-- **High-frequency trading** systems
-- **Real-time game networking**  
-- **IoT device communication**
-- **Microservices** with mixed languages
-- **Streaming data pipelines**
-- **Message queues** (Kafka, RabbitMQ)
-- **gRPC alternatives** for custom protocols
-
----
-
-## 🔄 Evolution Path
-
-Future enhancements:
-1. **Schema evolution** support
-2. **Custom field attributes**
-3. **Compression integration**
-4. **HTTP/gRPC bindings**
-5. **Database serialization** helpers
-6. **Monitoring/metrics** integration
-
-Your project is now ready for the fastest polyglot serialization experience! 🚀
+See [README.md](/Users/jkassis/Code/courier/README.md), [doc/ARCH.md](/Users/jkassis/Code/courier/doc/ARCH.md), and [doc/TODO.md](/Users/jkassis/Code/courier/doc/TODO.md) for the current migration plan.

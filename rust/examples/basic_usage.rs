@@ -1,5 +1,5 @@
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use courier::trx::msg::Msg;
+    use trx::trx::msg::Msg;
 
     let msg = Msg::new(
         "example_001",

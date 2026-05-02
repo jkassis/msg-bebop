@@ -1,6 +1,6 @@
 // rust/tests/integration_test.rs
 
-use courier::add;
+use trx::add;
 
 #[test]
 fn test_add_from_integration() {

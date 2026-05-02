@@ -1,4 +1,4 @@
-use courier::reliable::CourierWireMsg as Msg;
+use trx::reliable::CourierWireMsg as Msg;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

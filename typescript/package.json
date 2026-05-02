@@ -1,7 +1,7 @@
 {
-  "name": "party",
+  "name": "trx-workspace",
   "version": "1.0.0",
-  "description": "courier for typescript",
+  "description": "trx TypeScript interop and migration workspace",
   "main": "main.js",
   "type": "module",
   "scripts": {

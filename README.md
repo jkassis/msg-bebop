@@ -91,7 +91,6 @@ This repository is the coordination and verification repo for:
 ## Near-Term Work
 
 - rename the project framing to `trx`
-- rename `rustie/msg` to `rustie/trx`
 - create `golangie` and `tscriptie`
 - move reusable code into the shared submodules
 - keep cross-language tests and e2e verification here

@@ -188,26 +188,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
-name = "courier"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "base64",
- "dashmap",
- "env_logger",
- "fs2",
- "futures",
- "lazy_static",
- "log",
- "reqwest",
- "serde",
- "serde_json",
- "sled",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "crc32fast"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1580,6 +1560,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e672c95779cf947c5311f83787af4fa8fffd12fb27e4993211a84bdfd9610f9c"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "trx"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64",
+ "dashmap",
+ "env_logger",
+ "fs2",
+ "futures",
+ "lazy_static",
+ "log",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sled",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

@@ -1,4 +1,4 @@
-module github.com/jkassis/msg-bebop/go
+module github.com/jkassis/courier/go
 
 go 1.21
 

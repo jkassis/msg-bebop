@@ -2,7 +2,7 @@
 
 ## Done
 
-- Rust base message abstraction exists: `Msg`, `Tx`, and `Rx` in `rust/src/rustie/msg/`.
+- Rust base message abstraction exists: `Msg`, `Tx`, and `Rx` in `rust/src/rustie/trx/`.
 - Staged `trx` packages now exist in Rust, Go, and TypeScript in this repo as a migration bridge toward the shared language submodules.
 - `SyncTx` exists as an in-process transport for tests and local composition.
 - Rust core exists for `tx`, `tick`, `rx`, message/pact/receipt models, receipt-based idempotency, expiration hooks, and observability recorder plumbing.
@@ -34,7 +34,7 @@
 
 ### 2. Move reusable implementation work into shared submodules
 
-- [ ] Rename `rustie/msg` to `rustie/trx`.
+- [x] Rename `rustie/msg` to `rustie/trx`.
 - [ ] Create the `golangie` shared submodule.
 - [ ] Create the `tscriptie` shared submodule.
 - [ ] Create `trx` packages in each shared language submodule.

@@ -1,5 +1,5 @@
 use base64::Engine;
-use courier::trx::msg::Msg;
+use trx::trx::msg::Msg;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

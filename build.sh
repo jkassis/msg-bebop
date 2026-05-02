@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Msg Bebop - Complete Build and Test Script
+# trx migration build and test script
 # Builds libraries for all supported languages and runs tests
 
 set -e
@@ -286,7 +286,7 @@ run_benchmarks() {
 
 # Main execution
 main() {
-    echo "🎵 Msg Bebop - Polyglot Message Library Builder"
+    echo "trx migration build and test runner"
     echo "================================================"
 
     check_bebop
