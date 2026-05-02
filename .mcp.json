@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "cclsp": {
+      "command": "npx",
+      "args": [
+        "cclsp@latest"
+      ],
+      "env": {
+        "CCLSP_CONFIG_PATH": "./cclsp.json"
+      }
+    }
+  }
+}
