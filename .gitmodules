@@ -1,0 +1,3 @@
+[submodule "rust/src/rustie"]
+	path = rust/src/rustie
+	url = git@github.com:jkassis/rustie.git

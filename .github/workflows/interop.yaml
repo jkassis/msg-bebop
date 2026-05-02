@@ -1,0 +1,73 @@
+name: Cross-Language Interop
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  interop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install TypeScript dependencies
+        run: yarn install --cwd typescript --frozen-lockfile
+
+      - name: Run Interop Matrix
+        run: |
+          rm -rf conformance/e2e/logs
+          mkdir -p conformance/e2e/logs
+          ./make.sh interop test
+
+      - name: Upload Interop Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: interop-logs
+          path: conformance/e2e/logs
+
+  all-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install TypeScript dependencies
+        run: yarn install --cwd typescript --frozen-lockfile
+
+      - name: Run Full Matrix
+        run: |
+          rm -rf conformance/e2e/logs
+          mkdir -p conformance/e2e/logs
+          ./make.sh all test
+
+      - name: Upload Full-Test Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-test-interop-logs
+          path: conformance/e2e/logs

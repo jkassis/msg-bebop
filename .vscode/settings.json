@@ -1,0 +1,12 @@
+{
+  "go.toolsEnvVars": {
+    "GO111MODULE": "on"
+  },
+  "go.inferGopath": false,
+  "go.lintOnSave": "package",
+  // "go.testOnSave": true,
+  "go.testFlags": [
+    "-v"
+  ],
+  "go.testTimeout": "30s",
+}

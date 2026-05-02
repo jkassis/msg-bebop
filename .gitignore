@@ -1,3 +1,4 @@
-typescript/node_modules/**/*
-rust/target/**/*
-cpp/target/**/*
+target
+build
+coverage-badges
+conformance/e2e/logs/

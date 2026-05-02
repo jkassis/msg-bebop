@@ -1,165 +1,100 @@
-# Msg - Polyglot Bebop Message Library
+# trx
 
-A high-performance, cross-language message serialization library using Bebop.
+`trx` is a multi-language transmit/receive messaging foundation.
 
-## Overview
+Its purpose is to standardize a minimal one-way messaging API across languages and transports:
 
-This project defines a single `Msg` schema using Bebop and generates serialization/deserialization libraries for all supported languages:
+- `Msg`
+- `Tx`
+- `Rx`
 
-- **Rust** 🦀
-- **C#** 🟣
-- **TypeScript/JavaScript** 🟨
-- **Go** 🐹
-- **Python** 🐍
-- **C++** ⚡
+The base contract is intentionally simple. It should support:
 
-## Schema
+- in-process sync transport for tests
+- HTTP / WebSocket / gRPC / socket-based transports
+- cross-language interoperability
+- higher-level frameworks layered on top
 
-```bebop
-struct Msg {
-  1 -> string body;      // The actual message payload
-  2 -> string fromId;    // Sender ID
-  3 -> string id;        // ID for idempotency
-  4 -> string[] toIds;   // Array of recipient IDs
-  5 -> string type;      // Type of the message
-}
-```
+## Core Idea
 
-## Generated Libraries
+`trx` standardizes **one-way transmission**.
 
-Each language gets a packaged library that can be imported:
+It does **not** try to force reliable messaging, ACK semantics, retries, durable inbox/outbox behavior, or synchronous wait-for-ack semantics into the universal base API.
 
-- `rust/` → Cargo crate
-- `csharp/` → NuGet package  
-- `typescript/` → Yarn package
-- `go/` → Go module
-- `python/` → PyPI package
-- `cpp/` → Header-only library
+Those belong to specialized frameworks built on top of `trx`.
 
-## Project Structure
+## Canonical Message Shape
 
-```
-msg/
-├── schema/              # Bebop schema definitions
-│   └── msg.bop         # The Msg struct definition
-├── build.sh            # Build script for all languages
-├── rust/               # Rust library
-│   ├── src/lib.rs      # Library code with tests
-│   ├── examples/       # Usage examples
-│   └── Cargo.toml      # Rust package configuration
-├── typescript/         # TypeScript/JavaScript library
-│   ├── src/index.ts    # Library code with utilities
-│   ├── test/           # Jest tests
-│   ├── package.json    # Yarn package configuration
-│   └── yarn.lock       # Yarn dependency lock file
-├── go/                 # Go library
-│   ├── utils.go        # Utility functions
-│   ├── msg_test.go     # Go tests
-│   └── go.mod          # Go module configuration
-├── python/             # Python library
-│   ├── msg/            # Python package
-│   ├── tests/          # Python tests
-│   └── setup.py        # PyPI package configuration
-├── csharp/             # C# library
-│   ├── tests/          # C# tests
-│   └── msg.csproj      # NuGet package configuration
-└── cpp/                # C++ library
-    ├── examples/       # C++ examples
-    └── CMakeLists.txt  # CMake build configuration
-```
+Canonical `Msg` is the stable outer envelope for one-way transmission.
 
-## Usage
+Its fields are:
 
-### Rust
-```rust
-use bebop::Record;
-use msg::Msg;
+- `id`
+- `from_id`
+- `to_ids`
+- `type_`
+- `version`
+- `body`
 
-let msg = Msg {
-    body: "Hello",
-    from_id: "user1",
-    id: "msg123",
-    to_ids: vec!["user2"],
-    _type: "chat",
-};
+`body` is moving toward **binary / raw bytes** as the canonical payload representation. Structured payloads can be encoded on top by each framework or application.
 
-let mut bytes = Vec::new();
-msg.serialize(&mut bytes)?;
-let decoded = Msg::deserialize(&bytes)?;
-```
+## Layering
 
-### TypeScript
-```typescript
-import { Msg } from 'msg';
+The intended architecture has three layers:
 
-const msg = Msg({
-    body: "Hello",
-    fromId: "user1",
-    id: "msg123",
-    toIds: ["user2"],
-    type: "chat"
-});
+1. `trx` base API
+   - `Msg`
+   - `Tx`
+   - `Rx`
 
-const bytes = msg.encode();
-const decoded = Msg.decode(bytes);
-```
+2. transport adapters
+   - HTTP
+   - WebSockets
+   - gRPC
+   - custom sockets / UDP
+   - in-process sync transport
 
-### Go
-```go
-import "github.com/jkassis/msg-bebop/go"
+3. specialized frameworks
+   - example: reliable messaging
 
-msg := &bebopgen.Msg{
-    Body:   "Hello",
-    FromId: "user1",
-    Id:     "msg123",
-    ToIds:  []string{"user2"},
-    Type:   "chat",
-}
+## Courier / reliable
 
-bytes, _ := msg.MarshalBebopTo(nil)
-decoded := &bebopgen.Msg{}
-decoded.UnmarshalBebop(bytes)
-```
+The existing Courier work is being reframed as a specialized reliable messaging framework layered on top of `trx`.
 
-## Building
+Directionally:
 
-### Prerequisites
+- `msg` package becomes `trx`
+- Courier-specific work moves toward a `reliable` package
+- `CourierMsg` remains a framework-specific type, not part of the universal `trx` API
 
-Before building, you'll need to install the required tools:
+## Shared Library Submodules
 
-#### Bebop Compiler
-```bash
-# Install the main bebop compiler
-yarn global add @bebop/compiler
+The reusable implementation work should live in the language-specific shared submodules:
 
-# For Go support, also install bebopc-go
-go install github.com/200sc/bebop/main/bebopc-go@latest
-```
+- Rust: `rustie`
+- Go: `golangie` (planned)
+- TypeScript: `tscriptie` (planned)
 
-#### Language-Specific Tools
-- **Rust**: Install via [rustup.rs](https://rustup.rs/)
-- **Node.js/TypeScript**: Install [Node.js](https://nodejs.org/) and [Yarn](https://yarnpkg.com/)
-- **Go**: Install from [golang.org](https://golang.org/dl/)
-- **Python**: Python 3.7+ (optional, for Python library)
-- **C#**: .NET SDK (optional, for C# library)
-- **C++**: CMake and a C++17 compiler (optional, for C++ library)
+This repository is the coordination and verification repo for:
 
-### Build All Languages
-```bash
-./build.sh
-```
+- architecture docs
+- conformance fixtures
+- end-to-end and interoperability tests
+- cross-language migration planning
 
-Or build specific languages:
-```bash
-./build.sh rust      # Build only Rust
-./build.sh go        # Build only Go
-./build.sh typescript # Build only TypeScript
-```
+## Current State
 
-## Performance
+- Rust has the only real implementation today.
+- Go and TypeScript currently provide fixture/interoperability scaffolding.
+- The repo still contains Courier-oriented naming and structure that will be migrated.
 
-Bebop provides excellent performance characteristics:
-- **Speed**: 10-20x faster than JSON
-- **Size**: 50-60% smaller than JSON
-- **Zero-copy**: Support for zero-copy deserialization
-- **Cross-platform**: Identical binary format across all languages
+## Near-Term Work
+
+- rename the project framing to `trx`
+- rename `rustie/msg` to `rustie/trx`
+- create `golangie` and `tscriptie`
+- move reusable code into the shared submodules
+- keep cross-language tests and e2e verification here
+- move Courier-oriented reliable-delivery work toward a `reliable` package
+
+See [doc/ARCH.md](/Users/jkassis/Code/courier/doc/ARCH.md) and [doc/TODO.md](/Users/jkassis/Code/courier/doc/TODO.md) for the current architecture and migration plan.

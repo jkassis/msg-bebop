@@ -1,5 +1,6 @@
 go 1.23.1
 
 use (
-	./go
+	./golang/src
+	./golang/tests
 )

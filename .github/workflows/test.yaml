@@ -1,0 +1,293 @@
+name: Test and Coverage Dashboard
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+env:
+  MIN_COVERAGE_RUST: 80.0
+  MIN_COVERAGE_GO: 80.0
+  MIN_COVERAGE_TS: 80.0
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  rust:
+    name: 🦀 Rust
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            rust/build
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Cache Tarpaulin target
+        uses: actions/cache@v3
+        with:
+          path: rust/coverage-target
+          key: rust-tarpaulin-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: rust-tarpaulin-${{ runner.os }}-
+
+      - uses: actions/checkout@v3
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          override: true
+      - name: Install cargo-tarpaulin if needed
+        run: |
+          if ! command -v cargo-tarpaulin &> /dev/null; then
+            cargo install cargo-tarpaulin
+          fi
+      - run: ./make.sh rust coverage
+      - run: |
+          pct=$(grep -c "^DA:[0-9]*,[1-9][0-9]*" rust/lcov.info)
+          total=$(grep -c "^DA:" rust/lcov.info)
+          echo $((pct * 100 / total)) > rust/coverage.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage
+          path: rust/lcov.info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-percent
+          path: rust/coverage.txt
+
+  go:
+    name: 🐹 Go
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cache gcov2lcov binary
+        uses: actions/cache@v3
+        with:
+          path: ~/go/bin/gcov2lcov
+          key: gcov2lcov-${{ runner.os }}
+      - name: Install gcov2lcov if needed
+        run: |
+          if [[ ! -f ~/go/bin/gcov2lcov ]]; then
+            go install github.com/jandelgado/gcov2lcov@latest
+          fi
+      - uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('golang/src/go.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-go-
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+      - run: go install github.com/jandelgado/gcov2lcov@latest
+      - run: ./make.sh go coverage
+      - run: |
+          coverage=$(go tool cover -func=golang/build/coverage.out | grep total: | awk '{print int($3)}')
+          echo "$coverage" > golang/build/coverage.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage
+          path: golang/build/coverage.out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: go-percent
+          path: golang/build/coverage.txt
+
+  typescript:
+    name: 🧪 TypeScript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/cache@v3
+        with:
+          path: |
+            typescript/node_modules
+          key: ${{ runner.os }}-yarn-${{ hashFiles('typescript/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+      - name: Cache node_modules
+        uses: actions/cache@v3
+        with:
+          path: typescript/node_modules
+          key: typescript-deps-${{ runner.os }}-${{ hashFiles('typescript/yarn.lock') }}
+          restore-keys: |
+            typescript-deps-${{ runner.os }}-
+      - name: Install TypeScript dependencies
+        run: yarn install --cwd typescript
+      - run: ./make.sh ts coverage
+      - run: |
+          pct=$(grep -c "^DA:[0-9]*,[1-9][0-9]*" typescript/build/coverage/lcov.info)
+          total=$(grep -c "^DA:" typescript/build/coverage/lcov.info)
+          echo $((pct * 100 / total)) > typescript/coverage.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ts-coverage
+          path: typescript/build/coverage/lcov.info
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ts-percent
+          path: typescript/coverage.txt
+
+  dashboard:
+    name: 📊 Dashboard & Docs
+    runs-on: ubuntu-latest
+    needs: [rust, go, typescript]
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: build/coverage
+
+      - name: Restore tool caches
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/go/bin/gcov2lcov
+            typescript/node_modules
+          key: dashboard-tools-${{ runner.os }}
+
+      - name: Add Go bin to PATH
+        run: echo "$HOME/go/bin" >> $GITHUB_PATH
+
+      - name: Install and expose tools
+        run: |
+          if ! command -v gcov2lcov &> /dev/null; then
+            echo "Installing gcov2lcov..."
+            go install github.com/jandelgado/gcov2lcov@latest
+          else
+            echo "✅ gcov2lcov already cached"
+          fi
+
+          # lcov for genhtml
+          sudo apt-get update
+          sudo apt-get install -y lcov
+
+      - name: Normalize and merge LCOV
+        run: |
+          mkdir -p build/coverage/normalized
+
+          cp build/coverage/rust-coverage/lcov.info build/coverage/normalized/rust.lcov
+
+          gcov2lcov -infile build/coverage/go-coverage/coverage.out \
+                    -outfile build/coverage/normalized/go_raw.lcov
+          sed 's|^SF:cmd/|SF:golang/src/cmd/|' build/coverage/normalized/go_raw.lcov \
+              > build/coverage/normalized/go.lcov
+
+          sed 's|^SF:src/|SF:typescript/src/|' build/coverage/ts-coverage/lcov.info \
+              > build/coverage/normalized/ts.lcov
+
+          cat build/coverage/normalized/*.lcov > build/coverage/merged.info
+
+          genhtml build/coverage/merged.info \
+            --output-directory build/coverage/html \
+            --ignore-errors source
+
+      - name: Create Shields-style badges
+        run: |
+          mkdir -p coverage-badges
+
+          make_badge() {
+            key=$1
+            label=$(echo "$1" | awk '{print toupper(substr($0,1,1)) tolower(substr($0,2))}')
+            pct=$(cat build/coverage/${key}-percent/coverage.txt)
+            color=brightgreen
+            [[ "$pct" -lt 80 ]] && color=orange
+            [[ "$pct" -lt 50 ]] && color=red
+            curl -s "https://img.shields.io/badge/${label}-${pct}%25-${color}?style=for-the-badge" \
+              -o coverage-badges/${label}.svg
+          }
+
+          make_badge rust
+          make_badge go
+          make_badge ts
+
+      - name: Update README coverage table
+        run: bash .github/scripts/update_coverage_table.sh
+
+      - name: Commit and push changes if needed
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+
+          if git diff --quiet README.md coverage-badges; then
+            echo "✅ No changes to commit."
+          else
+            git add -f README.md coverage-badges
+            git commit -m "📊 Update coverage badges [skip ci]"
+            git push
+          fi
+
+      - name: Restore Rust doc build cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            rust/build
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: rust-docs-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            rust-docs-${{ runner.os }}-
+
+      - name: Generate Rust API docs
+        run: cargo doc --no-deps --lib --target-dir rust/build
+
+      - name: Copy Rust docs into dashboard folder
+        run: |
+          mkdir -p build/docs/rust
+          if [ -d rust/build/doc ]; then
+            cp -r rust/build/doc/* build/docs/rust/
+          else
+            echo "❌ Rust documentation not found in rust/build/doc"
+            exit 1
+          fi
+
+      - name: Restore TypeScript doc cache
+        uses: actions/cache@v3
+        with:
+          path: |
+            typescript/node_modules
+          key: ts-docs-${{ runner.os }}-${{ hashFiles('typescript/yarn.lock') }}
+          restore-keys: |
+            ts-docs-${{ runner.os }}-
+
+      - name: Generate TypeScript API docs
+        run: |
+          cd typescript
+          yarn install --frozen-lockfile
+          npx --yes typedoc \
+            --tsconfig tsconfig.json \
+            --entryPointStrategy expand \
+            --out ../build/docs/ts ./src
+
+      - name: Create Go docs placeholder
+        run: |
+          mkdir -p build/docs/go
+          echo "<h1>Go API Docs</h1>" > build/docs/go/index.html
+          echo "<p>See <a href='https://pkg.go.dev/github.com/jkassis/courier'>pkg.go.dev</a></p>" >> build/docs/go/index.html
+
+      - name: Publish everything to GitHub Pages
+        if: github.ref == 'refs/heads/main'
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: build
+          publish_branch: gh-pages
+          force_orphan: true

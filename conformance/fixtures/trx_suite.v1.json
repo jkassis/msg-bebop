@@ -1,0 +1,33 @@
+{
+  "message_decode": [
+    {
+      "name": "missing_version_defaults_to_1",
+      "input": {
+        "id": "m1",
+        "from_id": "sender",
+        "to_ids": ["receiver"],
+        "type_": "event",
+        "body": "aGk="
+      },
+      "expected": {
+        "version": 1,
+        "body_base64": "aGk="
+      }
+    },
+    {
+      "name": "explicit_version_preserved",
+      "input": {
+        "id": "m2",
+        "from_id": "sender",
+        "to_ids": ["receiver"],
+        "type_": "event",
+        "version": 7,
+        "body": "AAEC/w=="
+      },
+      "expected": {
+        "version": 7,
+        "body_base64": "AAEC/w=="
+      }
+    }
+  ]
+}
