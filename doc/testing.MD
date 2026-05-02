@@ -24,6 +24,7 @@ Current cross-language coverage:
 
 - Message decode parity: missing `version` defaults to `1`.
 - Message envelope parity for canonical `Msg`.
+- Base `trx` body parity: raw bytes in memory, base64 in JSON wire envelopes.
 - Tx validation parity: reject invalid `version=0`; reject non-ACK payloads containing ACK correlation fields.
 - ACK apply parity: validate ACK correlation fields and apply recipient-list shrinking semantics.
 - Network interop e2e topology matrix over TCP newline-JSON:
@@ -43,8 +44,11 @@ Current cross-language coverage:
 Runners:
 
 - Rust: `rust/tests/conformance_fixture_tests.rs`
+- Rust (`trx`): `rust/tests/trx_conformance_fixture_tests.rs`
 - Go: `golang/src/pkg/conformance` + `golang/tests/conformance_test.go`
+- Go (`trx`): `golang/src/pkg/trx/conformance_test.go`
 - TypeScript: `typescript/src/pkg/conformance.ts` + `typescript/tests/conformance.test.ts`
+- TypeScript (`trx`): `typescript/src/pkg/trx_fixture.test.ts`
 
 Directionally, reusable `trx` implementation code should move into:
 

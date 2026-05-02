@@ -3,6 +3,7 @@
 ## Done
 
 - Rust base message abstraction exists: `Msg`, `Tx`, and `Rx` in `rust/src/rustie/msg/`.
+- Staged `trx` packages now exist in Rust, Go, and TypeScript in this repo as a migration bridge toward the shared language submodules.
 - `SyncTx` exists as an in-process transport for tests and local composition.
 - Rust core exists for `tx`, `tick`, `rx`, message/pact/receipt models, receipt-based idempotency, expiration hooks, and observability recorder plumbing.
 - Rust ACK handling validates correlation fields and supports multi-recipient progress by shrinking `to_ids` as recipients ack.
@@ -11,6 +12,8 @@
 - Architecture direction is now decided: canonical one-way `Msg` remains the standard API, and Courier will use a Courier-specific wrapper named `CourierMsg`.
 - Project direction is now decided: `trx` is the primary product identity, and Courier is a framework layered on top of `trx`.
 - `Msg.body` direction is now decided: shift toward binary / raw bytes as the canonical payload representation.
+- A concrete cross-language wire contract now exists for base `trx` messages: in-memory raw bytes, JSON envelope body encoded as base64.
+- Shared `trx` conformance fixtures now exist for Rust, Go, and TypeScript.
 
 ## To Production Readiness
 
