@@ -1,28 +1,21 @@
-use bebop::Record;
-use msg_bebop::Msg;
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let msg = Msg {
-        body: "Hello from Rust!",
-        from_id: "rust_example",
-        id: "example_001",
-        to_ids: vec!["user1", "user2"],
-        _type: "example",
-    };
+    use courier::trx::msg::Msg;
 
-    println!("Original message: {:?}", msg);
+    let msg = Msg::new(
+        "example_001",
+        "rust_example",
+        vec!["user1".to_string(), "user2".to_string()],
+        "example",
+        b"Hello from Rust!".to_vec(),
+    );
 
-    // Serialize
-    let mut bytes = Vec::new();
-    msg.serialize(&mut bytes)?;
-    println!("Serialized size: {} bytes", bytes.len());
-
-    // Deserialize
-    let decoded = Msg::deserialize(&bytes)?;
-    println!("Decoded message: {:?}", decoded);
+    let json = serde_json::to_string(&msg)?;
+    let decoded: Msg = serde_json::from_str(&json)?;
 
     assert_eq!(msg, decoded);
-    println!("✅ Rust serialization test passed!");
+    println!("Serialized trx msg: {json}");
+    println!("Decoded body bytes: {:?}", decoded.body);
+    println!("✅ Rust trx serialization test passed!");
 
     Ok(())
 }

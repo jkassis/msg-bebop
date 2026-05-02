@@ -1,4 +1,5 @@
 mod lib_tests;
+mod reliable_tests;
 mod trx_tests;
 
 pub mod context;
@@ -25,6 +26,7 @@ pub mod rustie {
 }
 pub mod pact;
 pub mod receipt;
+pub mod reliable;
 
 pub use context::*;
 pub use courier::*;
@@ -38,6 +40,7 @@ pub use pact::*;
 pub use rustie::msg::msg::*;
 pub use rustie::msg::txrx::*;
 pub use rustie::trx as trx;
+pub use reliable::*;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
