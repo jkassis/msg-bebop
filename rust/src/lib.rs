@@ -1,4 +1,5 @@
 mod lib_tests;
+mod trx_tests;
 
 pub mod context;
 mod context_tests;
@@ -12,6 +13,11 @@ pub mod idempotency;
 pub mod observability;
 pub mod rustie {
     pub mod msg {
+        pub mod msg;
+        pub mod tx_sync;
+        pub mod txrx;
+    }
+    pub mod trx {
         pub mod msg;
         pub mod tx_sync;
         pub mod txrx;
@@ -31,6 +37,7 @@ pub use observability::*;
 pub use pact::*;
 pub use rustie::msg::msg::*;
 pub use rustie::msg::txrx::*;
+pub use rustie::trx as trx;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right
