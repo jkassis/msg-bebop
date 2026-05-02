@@ -17,13 +17,13 @@ mod tests {
         let deserialized: Msg = serde_json::from_str(&serialized).expect("deserialize trx msg");
 
         assert_eq!(msg, deserialized);
-        assert!(serialized.contains("\"body\""));
+        assert!(serialized.contains("\"body\":\"AAEC/w==\""));
     }
 
     #[test]
     fn trx_msg_defaults_version_to_1() {
         let json =
-            r#"{"id":"m1","from_id":"f","to_ids":["t"],"type_":"event","body":[104,105]}"#;
+            r#"{"id":"m1","from_id":"f","to_ids":["t"],"type_":"event","body":"aGk="}"#;
         let msg: Msg = serde_json::from_str(json).expect("deserialize default-version trx msg");
         assert_eq!(msg.version, 1);
         assert_eq!(msg.body, b"hi".to_vec());
