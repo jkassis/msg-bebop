@@ -1,10 +1,92 @@
-# Courier Architecture
+# trx Architecture
 
-## What Is Courier
+## What Is trx
 
-Courier is a multi-language reliable messaging library. It provides crash-fault-tolerant, at-least-once message delivery by persisting messages and retry state in a transactional database. Implementations exist (or are planned) in Rust, Go, and TypeScript.
+`trx` means **transmit / receive**. It is a multi-language messaging component framework centered on a simple, canonical one-way API:
 
-The core idea: **outbound messages are written transactionally alongside your application's business logic, then delivered asynchronously with configurable retry until acknowledged or expired.**
+- `Msg`
+- `Tx`
+- `Rx`
+
+That API makes the mechanics of delivery opaque to the caller. Concrete implementations can then provide different delivery mechanisms and different service guarantees.
+
+The current repo contains:
+
+- a **base message abstraction** in `rust/src/rustie/msg/` that is intended to move to `rustie/trx`
+- a **Rust reliable-delivery component** (`Courier`) layered on top of that abstraction
+- fixture/interoperability scaffolding for future Go and TypeScript implementations
+
+The durable implementation target is not this repo alone. Reusable library work should live in the shared language submodules:
+
+- `rustie`
+- `golangie` (to be created)
+- `tscriptie` (to be created)
+
+This repo is the coordination and verification repo for architecture, fixtures, e2e tests, and cross-language conformance.
+
+The long-term goal is to unify one-way messaging semantics across transports and across languages.
+
+Courier specifically is one higher-level framework in that stack. Its core idea is: **outbound messages are written transactionally alongside your application's business logic, then delivered asynchronously with configurable retry until acknowledged or expired.**
+
+---
+
+## Component Model
+
+The intended architecture is layered:
+
+1. **Base message API**
+   - Standard message envelope (`Msg`)
+   - Standard send/receive interfaces (`Tx`, `Rx`)
+   - No built-in guarantee beyond “attempt to send/receive this message”
+
+2. **Transport adapters**
+   - Concrete `Tx` / `Rx` implementations over HTTP, WebSockets, gRPC, custom sockets, UDP, in-process dispatch, etc.
+   - Responsible for bytes-on-the-wire and edge-specific concerns such as connection setup, framing, and transport-local authentication hooks
+
+3. **Guarantee layers / messaging components**
+   - Components that wrap or compose with the base `Tx` / `Rx` abstraction to provide stronger semantics
+   - Example: Courier provides persistent outbox/inbox, ACK handling, retry, expiration, and dedup
+
+This means `trx` is the product focus, not Courier. Courier is **not** the transport abstraction itself. Courier **uses** the transport abstraction.
+
+### Design Intent
+
+The caller should program against a stable messaging surface and avoid depending directly on low-level transport details. Swapping HTTP for WebSockets, or using in-process sync dispatch in tests, should not require the caller to change application message logic.
+
+### Composition Direction
+
+The likely direction is a composable chain, conceptually similar to HTTP middleware:
+
+- envelope normalization
+- edge authentication / connection validation
+- message validation
+- observability
+- reliability guarantees (retry, ACK, persistence)
+- routing / dispatch
+
+This repo does not yet implement that full chainable model, but it is a coherent direction and consistent with the existing `Tx` / `Rx` abstraction.
+
+### Standardization Boundary
+
+The project should standardize the **one-way messaging API**:
+
+- canonical `Msg`
+- canonical `Tx`
+- canonical `Rx`
+
+Reliable messaging should **not** be forced into that same contract. Courier is a separate framework-layer API with its own message wrapper, state model, and options surface. It may expose synchronous waiting, ACK-aware operations, or framework-specific send options, but those are Courier concerns, not base `Tx` / `Rx` concerns.
+
+### Specialization Boundary
+
+`Msg` should remain the canonical outer envelope for one-way transmission. Message specialization should happen primarily through the **structure of `body`**, not by extending the outer envelope with framework-specific fields.
+
+That choice keeps serialization simple across languages:
+
+- Rust can deserialize `body` into concrete types
+- Go can unmarshal `body` into concrete structs or maps
+- TypeScript can narrow `body` with discriminated unions or runtime validation
+
+In other words, specialization happens through the payload carried by `Msg.body`, while the outer envelope remains stable.
 
 ---
 
@@ -12,14 +94,92 @@ The core idea: **outbound messages are written transactionally alongside your ap
 
 ### Msg
 
-A message with fields: `id`, `version`, `from_id`, `to_ids`, `type_`, `body`. Serialized as JSON.
+`Msg` is the canonical one-way message envelope. It is the stable base contract for fire-and-forget messaging across transports and languages.
+
+Fields: `id`, `version`, `from_id`, `to_ids`, `type_`, `body`.
+
+The outer envelope should serialize cleanly across languages. `body` is moving toward a **binary / raw bytes** representation so the base `trx` contract does not force one structured payload model on every language/runtime.
 
 - `version` is a small integer envelope version (`u16` / `uint16`) with default `1`.
 - Courier is intentionally unordered (UDP-like). If an embedder needs ordering, it must define its own ordering fields and receiver-side ordered queueing.
 
 `to_ids` is a list of intended recipients, but Courier sends the message exactly once per tick — it is the **transport layer's responsibility** to route the message to multiple recipients. `to_ids` is metadata for the transport, not a Courier-level fan-out mechanism.
 
-A special message type `"Ack"` is used for acknowledgements. ACKs must include validation/correlation fields: `msg_id`, `from_id`, `to_id`, and `version`.
+The base `Msg` envelope is intentionally simple. More specialized behavior can be layered on top:
+
+- body-specialized message protocols
+- Courier-specific reliability wrappers
+- wrapped payloads carrying application-defined metadata
+- edge-authenticated envelopes that are normalized into trusted internal messages
+
+### Msg.body
+
+`body` is the primary specialization point.
+
+The intended pattern is:
+
+- outer `Msg` stays stable
+- `type_` identifies how to interpret `body`
+- `body` carries transport- and framework-specific payload bytes
+
+This gives structural hierarchy that all target languages can support well.
+
+Conceptually:
+
+```text
+Msg {
+  id,
+  from_id,
+  to_ids,
+  type_,
+  version,
+  body
+}
+```
+
+Where `body` may represent:
+
+- an application event payload
+- a request payload
+- a Courier protocol payload
+- an auth-wrapped payload
+
+The intended wire direction is:
+
+- canonical `Msg.body` is binary / raw bytes
+- frameworks and applications define their own codecs on top
+- cross-language compatibility is achieved by agreeing on codecs, not by hardcoding a single structured payload type into the outer `Msg`
+
+### CourierMsg
+
+`CourierMsg` is a Courier-specific wrapper around canonical `Msg`. It exists because Courier's reliable delivery design benefits from keeping ACK and reliability-related metadata tightly bound to the message shape for storage and state-transition efficiency.
+
+Conceptually:
+
+```text
+CourierMsg {
+  msg: Msg,
+  courier-specific reliability metadata,
+  courier-specific ACK/correlation metadata
+}
+```
+
+This wrapper is intentionally a **Courier snowflake**, not part of the universal `trx` base API.
+
+Directionally, Courier-specific work should move toward a `reliable` package built on `trx`.
+
+### Courier ACK Metadata
+
+Courier uses ACK semantics as part of its reliable-delivery protocol. That metadata belongs to `CourierMsg`, Courier payload schemas, and Courier state, not to canonical `Msg`.
+
+Courier ACK/correlation data may include:
+
+- acknowledged message identity
+- sender/recipient correlation for ACK validation
+- version correlation
+- recipient-progress state for multi-recipient completion
+
+Some of this may live directly on `CourierMsg`, some may live inside Courier-specific `body` payloads, and some may live in Courier-managed storage keyed by message ID. That split is a Courier implementation decision.
 
 ### Pact
 
@@ -53,35 +213,75 @@ A lightweight marker (empty value) stored in the DB, indexed by tick. Represents
 
 ## Goals
 
-- Crash-fault-tolerant delivery — messages survive process restarts.
-- At-least-once semantics with pluggable idempotency on receive.
-- Pluggable storage — any transactional KV store can back the system.
-- Pluggable transport — the Tx/Rx trait abstraction decouples delivery mechanism from core logic.
-- Pluggable retry — `pact_factory` and `pact_ticker` let callers define retry budgets and schedules.
-- Multi-language — same semantics across Rust, Go, TypeScript.
+- Standardize a base message API across transports and languages.
+- Make low-level delivery mechanics opaque to callers programming against `Tx` / `Rx`.
+- Allow multiple transport implementations behind a common interface.
+- Allow higher-level guarantee layers to be built on the same interface.
+- Support multi-language implementations with compatible envelope semantics.
+- In reliable-delivery frameworks such as Courier: provide crash-fault-tolerant, at-least-once delivery with a framework-specific API, message wrapper, payload schemas, pluggable storage, retry, and idempotency.
 
 ## Non-Goals (current)
 
 - Global ordering guarantees (no total order across messages).
 - Exactly-once delivery at the transport layer (idempotency is at the application/receiver layer).
 - Built-in network transport (currently only `SyncTx` for in-process/test use).
-- Built-in security model for transport/authentication/authorization (deliberately delegated to embedding systems).
+- End-to-end auth forwarding in the base framework. Edge auth is expected to terminate at the boundary, after which internal sender IDs are trusted by convention or deployment design.
 - Universal capacity model (deployment-specific sizing remains with operators).
+
+## Design Tensions
+
+The current goals are compatible, but several tensions must be handled explicitly:
+
+1. **Base API vs guarantee-layer semantics**
+   - The base `Tx` / `Rx` contract should stay minimal.
+   - Reliability semantics such as ACKs, retries, durable inbox/outbox, and expiration belong in higher-level components like Courier.
+   - Tension is resolved by keeping the base abstraction narrow and treating stronger guarantees as wrappers or composed components with their own APIs.
+
+2. **Stable outer envelope vs specialized protocols**
+   - The outer `Msg` envelope should remain stable across languages.
+   - Specialized frameworks still need richer semantics.
+   - Tension is resolved by specializing primarily through `body` shape and protocol-specific wrappers rather than by mutating the universal outer envelope.
+
+3. **Opaque transport vs transport-specific features**
+   - Callers want transport opacity.
+   - Real transports expose different capabilities: headers, connection handshakes, MTU limits, streaming, ordering, backpressure, auth hooks.
+   - Tension is resolved by standardizing only the common message contract and allowing adapters or wrappers to map transport-specific concerns at the edge.
+
+4. **Trusted internal sender IDs vs authentication**
+   - You want authentication handled at the edge, not forwarded through every internal hop.
+   - That is coherent, but the trust boundary must be explicit: once a message is admitted into the internal pipeline, `from_id` is trusted because an edge component already validated it.
+   - The risk is accidental widening of that trust boundary. This is an operational/design discipline issue, not an unresolvable architecture problem.
+
+5. **Universal API vs different guarantee profiles**
+   - Some implementations will be best-effort.
+   - Others, like Courier, will provide durable at-least-once delivery.
+   - Tension is resolved by documenting guarantee profiles per component instead of pretending the base API implies one fixed reliability model.
+
+6. **Standardized one-way API vs non-standard reliable API**
+   - Fire-and-forget messaging standardizes cleanly around `Msg` + `Tx` + `Rx`.
+   - Reliable messaging likely needs framework-specific message shape, options, synchronous wait semantics, and ACK-specific operations.
+   - Tension is resolved by standardizing the one-way API and explicitly allowing Courier to define a separate API around `CourierMsg`.
+
+None of these tensions are fatal. They do mean the docs must clearly separate:
+
+- the **base messaging abstraction**
+- the **transport adapter layer**
+- the **guarantee-providing component layer**
 
 ---
 
 ## Transport Abstraction
 
-Courier is **transport-agnostic**. It defines `Tx` and `Rx` interfaces (traits in Rust, interfaces in Go/TypeScript) but has no opinion about how bytes move between services. The core message lifecycle — persistence, retry, dedup, ack — is completely decoupled from the delivery mechanism.
+The base messaging framework is **transport-agnostic**. It defines `Tx` and `Rx` interfaces (traits in Rust, interfaces in Go/TypeScript) but has no opinion about how bytes move between services.
 
 ```
-Tx   — sends a message to a remote Courier instance
-Rx   — receives a message from a remote Courier instance
+Tx   — transmits a message
+Rx   — receives a message
 ```
 
-This is a deliberate strength: implementers use whatever transport is available or optimal for their environment. The same Courier core works whether messages travel over HTTP, gRPC, WebSockets, Unix sockets, NATS, a shared-memory channel, or a custom protocol. The transport layer is a plug-in, not a dependency.
+This is a deliberate strength: implementers use whatever transport is available or optimal for their environment. The same higher-level messaging component can in principle run over HTTP, gRPC, WebSockets, Unix sockets, a shared-memory channel, or a custom protocol. The transport layer is a plug-in, not a dependency.
 
-Courier sends each message at most once per tick. If a message has multiple recipients (`to_ids`), the transport implementation is responsible for routing to all of them. Courier does not fan out at its layer.
+At the base `trx` layer, `Msg` is one-way and transport-neutral. Higher-level frameworks such as Courier/reliable may impose additional semantics on top.
 
 | Strategy | Use Case |
 |----------|----------|
@@ -92,17 +292,88 @@ Courier sends each message at most once per tick. If a message has multiple reci
 | Custom wire protocol | Domain-specific or performance-optimized transports |
 | Deterministic message passing | Blockchain / replicated state machine runtimes |
 
+### Edge Authentication Model
+
+Authentication is expected to happen **at the edge transport boundary**, not as a universal base-framework feature.
+
+That means:
+
+- HTTP may authenticate via headers, mTLS, cookies, or bearer tokens
+- WebSockets may authenticate during connect/upgrade
+- gRPC may authenticate via metadata or mTLS
+- custom protocols may authenticate during session establishment
+
+After edge admission, the message pipeline may operate on a normalized internal `Msg` whose `from_id` is treated as trusted. The proof of authentication does not need to be forwarded through the base framework.
+
+If a deployment needs auth context to travel with the message, it can define a wrapped application-level payload or envelope extension that carries that metadata explicitly. That is an application/component choice, not a base-framework requirement.
+
 ### Courier Setup
 
 To instantiate a Courier, the caller provides:
 
 1. **`sender`** — a `Tx` implementation that performs the actual send.
-2. **`handler`** — processes inbound messages after dedup check.
+2. **receiver-side consumption model** — in the current Rust implementation, Courier persists new inbound messages into an inbox (`rm:` keys) after dedup, and the embedding application consumes that inbox later. There is no inline handler callback in the current library surface.
 3. **`pact_factory`** — creates the initial `Pact` when a message is sent (sets initial retry state).
 4. **`pact_ticker`** — given current `Pact`, returns the next tick to retry or an error to stop retrying.
 5. **`DB` implementation** — storage backend (see [Storage Abstraction](#storage-abstraction) below).
 6. **`idempotency_strategy`** — receiver-side dedup strategy implementation (required; receipt strategy is one implementation).
 7. **`recorder`** — observability recorder interface implementation (required; no-op implementation allowed).
+
+### Courier API Surface
+
+Courier should be treated as having its own API surface, distinct from the base `Tx` / `Rx` API.
+
+That API may include:
+
+- `CourierMsg` instead of bare `Msg`
+- Courier-specific send options
+- asynchronous send/receive operations
+- optional synchronous waiting for ACK completion
+- framework-specific error and expiration behavior
+
+The key point is that Courier does not need to force all of this into the base `Tx` / `Rx` standard.
+
+### Inbound Handling Model
+
+There are currently two possible receiver architectures:
+
+1. **Inline handler model** — Courier dedups, calls application code inline, and ACKs only after the handler succeeds.
+2. **Durable inbox model** — Courier dedups, persists the inbound message, commits, and ACKs; application code consumes the stored inbox message later.
+
+The current Rust implementation is the **durable inbox model**. The older parts of this document were written assuming the **inline handler model**, which is why some sections below still reference a `handler()`. For production planning, treat the durable inbox model as authoritative until an explicit architecture change is made.
+
+## Base API vs Courier
+
+The clean way to reason about the project is:
+
+- `Msg` + `Tx` + `Rx` are the **standard messaging API**
+- transport adapters are **implementations of that API**
+- Courier is a **higher-level component** that composes with that API to provide reliable messaging guarantees using a Courier-specific `CourierMsg` wrapper and Courier-specific API semantics
+
+Courier should therefore be documented as **one guarantee profile** in `trx`, not as the entirety of the framework.
+
+## Shared Submodule Strategy
+
+Reusable implementation work should flow into shared language submodules:
+
+- `rustie`
+- `golangie`
+- `tscriptie`
+
+Target migrations:
+
+- `rustie/msg` -> `rustie/trx`
+- create `golangie/trx`
+- create `tscriptie/trx`
+- move Courier-oriented code toward `reliable` packages built on top of those `trx` packages
+
+This repository should retain:
+
+- architecture docs
+- migration planning
+- shared fixtures
+- conformance tests
+- cross-language e2e and interoperability tests
 
 ---
 
@@ -132,6 +403,7 @@ sequenceDiagram
     participant DBA as DB A
     participant CB as Courier B (inbound)
     participant DBB as DB B
+    participant Inbox as Receiver Inbox
     participant Handler as Receiver App
 
     App->>App: Begin DB transaction
@@ -146,10 +418,10 @@ sequenceDiagram
     CA->>CB: sender.tx(msg)
     CB->>DBB: Check idempotency (receipt / strategy)
     CB->>DBB: Store inbound msg
-    CB->>Handler: handler(msg)
     CB-->>CA: Send Ack
     CA->>DBA: Delete msg + pact
-    CB->>DBB: Delete inbound msg
+    Handler->>Inbox: poll / claim inbound msg
+    Inbox->>DBB: delete inbound msg after app processing
 ```
 
 ### Failure / Retry Path
@@ -171,10 +443,11 @@ flowchart TD
     A[rx receives msg] --> B{msg.type == Ack?}
     B -->|yes| C[Delete outbound msg + pact for acked msg_id]
     B -->|no| D{Idempotency check passes?}
-    D -->|duplicate| E[Already processed — send Ack, skip handler]
+    D -->|duplicate| E[Already processed — send Ack]
     D -->|new| F[Store inbound msg + idempotency state]
-    F --> G[Call handler]
+    F --> G[Commit inbox write]
     G --> H[Send Ack]
+    H --> I[Application later consumes inbox]
 ```
 
 ### Failure Mode Catalog
@@ -184,7 +457,8 @@ flowchart TD
 | Sender crash after `tx()`, before commit | Between `courier.tx()` and DB commit | Transaction rolls back — message never existed | None |
 | Sender crash after commit, before `tick()` | After commit, `tick()` not yet called | On restart, `tick()` picks up persisted send event | None — core durability guarantee |
 | Sender crash during `tick()`, after send, before ack | `sender.tx()` succeeded, ack not processed | On restart, send event still exists, message retries. Receiver dedup via idempotency. | Duplicate delivery (handled by idempotency) |
-| Receiver crash after processing, before ack sent | `handler()` completed, ack not sent | Sender retries. Receiver dedup if idempotency state was committed. | Re-processing if idempotency state not committed |
+| Receiver crash after inbox commit, before ack sent | Inbound msg + idempotency state committed, ack not sent | Sender retries. Receiver dedup suppresses duplicate, then another ack is sent. | None if dedup window covers retry horizon |
+| Receiver app crash after ack, before inbox consumption | Courier already acked sender; app has not yet processed persisted inbox entry | App restarts and later drains inbox. Sender does not retry because ack already succeeded. | Processing latency increases; no sender-side retry safety needed |
 | Network partition (ack lost) | Ack in flight | Sender retries on next tick. Receiver dedup via idempotency. | None if idempotency window covers retry horizon |
 | DB full / write failure during `tick()` | Pact update or send event reschedule | `tick()` operates in its own DB transaction — partial writes roll back | None if tick transaction is atomic (see [Tick Atomicity](#tick-atomicity)) |
 | `courier.tx()` fails mid-write | Partial Courier state in caller's txn | `courier.tx()` returns error. **Caller must roll back the transaction.** Partial state is discarded with the rollback. | None if caller rolls back. Corruption if caller commits partial state. |
@@ -296,7 +570,7 @@ The only requirement is that the storage engine supports transactions, because t
 
 If the commit fails, all state changes from this tick are rolled back and can be retried on the next `tick()` call.
 
-**To verify:** Whether `tick()` creates its own transaction or expects the caller to provide one. The Rust implementation has the answer.
+The current Rust implementation expects the caller to provide the DB transaction to `tick()`. The required invariant is still the same: all DB mutations performed during a `tick()` call must commit or roll back atomically.
 
 ### Why This Matters
 
@@ -345,11 +619,12 @@ Idempotency is a required pluggable receiver-side strategy. Receipt-based dedup 
 
 `keep_receipt` becomes strategy-specific configuration under `idempotency_strategy`. Cleanup remains strategy-defined: receipt-based strategies may clean on `tick()`, while sequence-based strategies may not require cleanup.
 
-Minimum strategy contract:
+Current Rust strategy contract:
 
-- `begin(msg)` — classify `new` vs `duplicate` before handler execution.
-- `commit(msg)` — persist successful-processing idempotency state.
-- `abort(msg)` — rollback/cleanup provisional idempotency state on handler failure.
+- `on_rx(msg, tick)` — classify `new` vs `duplicate` and persist dedup state in the receive transaction.
+- `on_tick(tick)` — strategy-specific cleanup or maintenance, such as expiring receipts.
+
+If Courier later adopts an inline handler model, the idempotency contract will likely need to expand to a `begin/commit/abort` shape so dedup state can be tied to handler success rather than inbox persistence.
 
 ---
 
@@ -379,10 +654,11 @@ Required event surface (stable names):
 - `courier.tick.send_success`
 - `courier.tick.send_failure`
 - `courier.rx.duplicate`
-- `courier.rx.handler_success`
-- `courier.rx.handler_failure`
+- `courier.rx.persisted`
 - `courier.ack.processed`
 - `courier.msg.expired`
+
+Note: the current Rust code still emits `courier.rx.handler_success` when it persists an inbound message into the inbox. That event should be renamed to `courier.rx.persisted` to match the actual architecture.
 
 Recorder contract guidelines:
 
@@ -415,18 +691,20 @@ Courier supports message versioning with minimal overhead via the `Msg.version` 
 - Runbooks will be split by incident class under `doc/runbooks/` (strategy B).
 - Multi-recipient ACK progress uses recipient-list shrinking: on validated ACK, remove the acking `to_id` from the message's target recipient IDs so future retries skip that recipient.
 - ACK timeout/retry for partial success uses one shared pact per message (Option A) to avoid per-recipient write amplification.
+- Current inbound architecture is durable inbox, not inline handler execution. Any move to inline handling is a separate design change, not current behavior.
 
 ---
 
 ## Invariants
 
 - A message is only visible to `tick()` after the caller commits its DB transaction.
-- Idempotency check runs before `handler()` — duplicate messages are acked but not re-processed (within the idempotency window).
+- Idempotency check runs before inbox persistence — duplicate messages are acked but not persisted again (within the idempotency window).
 - `tick()` is intentionally single-threaded per Courier instance and must not be called concurrently. The caller is responsible for serializing `tick()` calls (e.g., single-threaded tick loop, mutex).
-- `tick()` operates in its own DB transaction — pact updates and send event rescheduling are atomic.
+- `tick()` must run within one DB transaction per invocation — pact updates and send event rescheduling are atomic.
 - ACK processing updates sender state; outbound msg+pact are deleted only when delivery is complete for the message's required recipient set.
 - At most **one send attempt per message per tick**. Courier does not retry within a single tick.
 - If `courier.tx()` returns an error, the caller must roll back the transaction.
+- For new inbound messages, Courier commits the inbox write before sending the ACK.
 
 ## Non-Guarantees
 
@@ -514,16 +792,16 @@ System designers must size these parameters to satisfy their SLAs. Courier provi
 
 | Component | Rust | Go | TypeScript |
 |-----------|------|----|------------|
-| Msg / Pact / Receipt | Done | Scaffold | Scaffold |
-| Courier (tx/tick/rx) | Done | Not started | Not started |
-| DB abstraction | Done (SledDB) | Not started | Not started |
-| Transport (Tx/Rx) | SyncTx only | Not started | Not started |
-| Integration tests | Done | Scaffold | Scaffold |
-| Network transport | Not started | Not started | Not started |
-| Idempotency strategy | Receipt built-in + pluggable interface | Not started | Not started |
-| Expiration hook | Done (no-op + DLQ reference hook) | Not started | Not started |
-| Observability recorder interface | Done (no-op + event surface) | Not started | Not started |
-| Conformance suite (cross-language) | Not started | Not started | Not started |
+| Msg / Pact / Receipt model | Implemented | Fixture/scaffold only | Fixture/scaffold only |
+| Courier core (`tx` / `tick` / `rx`) | Implemented | Not implemented | Not implemented |
+| DB abstraction | Implemented (`DB` / `DBTx`) | Not implemented | Not implemented |
+| Storage backend | `SledDB` only; not a production-grade transactional adapter | Not implemented | Not implemented |
+| Transport | `SyncTx` only for in-process tests | Interop binary only | Interop binary only |
+| Inbound model | Durable inbox persistence + ACK | Not implemented | Not implemented |
+| Idempotency strategy | Receipt built-in + pluggable interface | Fixture parity only | Fixture parity only |
+| Expiration hook | Implemented (no-op + DLQ reference hook) | Not implemented | Not implemented |
+| Observability recorder interface | Implemented, event surface needs naming cleanup | Not implemented | Not implemented |
+| Conformance suite | Fixture + interop coverage | Fixture + interop coverage | Fixture + interop coverage |
 
 ---
 
@@ -564,7 +842,7 @@ pub trait Rx: Send + Sync {
 }
 ```
 
-`SyncTx` is the current in-process implementation — routes `tx()` directly to `Rx::rx()`. Used for testing.
+`SyncTx` is the current in-process implementation — routes `tx()` directly to `Rx::rx()`. Used for testing. No production network transport ships in this repo today.
 
 ### DB Adapter Example (Rust / Sled)
 

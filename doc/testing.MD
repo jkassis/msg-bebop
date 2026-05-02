@@ -1,10 +1,18 @@
-# Courier Testing
+# trx / reliable Testing
 
 ## Conformance Suite Scope
 
 - [ ] Golden scenarios: happy path, ack loss, sender crash before/after commit, receiver crash before/after ack, duplicate replay after dedup window.
 - [ ] Invariant assertions: at-least-once delivery, no pre-commit visibility, one-attempt-per-message-per-tick, duplicate suppression by configured strategy.
 - [ ] Language parity checks for wire format and state transitions (`Msg`, `Pact`, `Receipt`, events).
+- [ ] Base `trx` parity checks for canonical `Msg`, raw-bytes `body`, and `Tx` / `Rx` behavior across Rust, Go, and TypeScript.
+
+Current reality:
+
+- Rust is the only implementation with a Courier/reliable core.
+- Go and TypeScript currently provide fixture/interoperability scaffolding, not full Courier implementations.
+- Existing interop tests validate envelope shape and ACK behavior across demo binaries; they are not equivalent to full cross-language `trx` + reliable conformance.
+- This repository is the intended home for e2e tests, interop tests, and cross-language conformance, even as reusable implementation code moves into shared submodules.
 
 ## Shared Fixture Suite
 
@@ -15,6 +23,7 @@ Fixture path:
 Current cross-language coverage:
 
 - Message decode parity: missing `version` defaults to `1`.
+- Message envelope parity for canonical `Msg`.
 - Tx validation parity: reject invalid `version=0`; reject non-ACK payloads containing ACK correlation fields.
 - ACK apply parity: validate ACK correlation fields and apply recipient-list shrinking semantics.
 - Network interop e2e topology matrix over TCP newline-JSON:
@@ -36,6 +45,14 @@ Runners:
 - Rust: `rust/tests/conformance_fixture_tests.rs`
 - Go: `golang/src/pkg/conformance` + `golang/tests/conformance_test.go`
 - TypeScript: `typescript/src/pkg/conformance.ts` + `typescript/tests/conformance.test.ts`
+
+Directionally, reusable `trx` implementation code should move into:
+
+- `rustie/trx`
+- `golangie/trx`
+- `tscriptie/trx`
+
+while this repository continues to host shared test fixtures and cross-language verification.
 
 Execution commands:
 
