@@ -14,6 +14,7 @@
 - `Msg.body` direction is now decided: shift toward binary / raw bytes as the canonical payload representation.
 - A concrete cross-language wire contract now exists for base `trx` messages: in-memory raw bytes, JSON envelope body encoded as base64.
 - Shared `trx` conformance fixtures now exist for Rust, Go, and TypeScript.
+- A first concrete Rust `reliable` module now exists, including `CourierMsg` plus bridge conversions to the current legacy Courier wire shape.
 
 ## To Production Readiness
 
@@ -38,6 +39,7 @@
 - [ ] Create `trx` packages in each shared language submodule.
 - [ ] Move reusable base messaging code from this repo into the shared `trx` packages.
 - [ ] Leave this repo focused on docs, fixtures, e2e tests, interop tests, and cross-language verification.
+- [ ] Perform repo cleanup after migration checkpoints, including deleting temporary backup branches created during the `main`/`origin/main` reconciliation once they are no longer needed.
 
 ### 3. Define trust boundaries and security posture
 
@@ -110,3 +112,9 @@
 - [ ] Add ACK validation fields (`msg_id`, `from_id`, `to_id`, `version`) and reject malformed/mismatched ACKs in the actual Go/TS Courier cores. (Rust done; Go/TS core pending)
 - [ ] Add retry/idempotency guardrails, including receipt strategy validation (`keep_receipt >= max_retry_horizon` when statically knowable), in Go/TS cores. (Rust done; Go/TS core pending)
 - [ ] Define typed error categories (`retryable`, `terminal`, `caller_bug`) consistently across Rust/Go/TS implementations. (Rust type exists; Go/TS core pending)
+
+### 11. Repo cleanup
+
+- [ ] Delete temporary local backup branches created during the unrelated-history sync once confidence is high that `main` contains everything needed.
+- [ ] Delete stale feature branches after their work is fully landed on `main`.
+- [ ] Remove obsolete files and examples that still reflect the old `msg`/Courier-centric project identity.
