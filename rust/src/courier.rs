@@ -6,11 +6,8 @@ use crate::{
     idempotency::{IdempotencyResult, IdempotencyStrategy},
     observability::{ObservabilityEvent, ObservabilityRecorder},
     pact::Pact,
+    reliable::{CourierWireMsg as Msg, Rx, Tx},
     receipt::Receipt,
-    rustie::{
-        msg::msg::Msg,
-        msg::txrx::{Rx, Tx},
-    },
 };
 use async_trait::async_trait;
 use lazy_static::lazy_static;

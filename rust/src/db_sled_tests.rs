@@ -2,8 +2,8 @@
 mod tests {
     use crate::db::DBTx;
     use crate::db_sled::{SledDB, SledDBTx};
-    use crate::Msg;
     use crate::DB;
+    use crate::reliable::CourierWireMsg;
     use std::sync::Arc;
 
     #[tokio::test]
@@ -17,7 +17,7 @@ mod tests {
         let db = Arc::new(db);
 
         // Test storing and retrieving a message in the database
-        let msg = Msg {
+        let msg = CourierWireMsg {
             body: "Test message".to_string(),
             from_id: "sender123".to_string(),
             id: "msg123".to_string(),
@@ -38,7 +38,7 @@ mod tests {
         println!("Message stored in database");
 
         let dbtx = db.dbtx_create().expect("Failed to create DB transaction");
-        let retrieved_msg: Msg =
+        let retrieved_msg: CourierWireMsg =
             serde_json::from_slice(&dbtx.obj_get(&msg.id).unwrap().unwrap()).unwrap();
         assert_eq!(msg, retrieved_msg);
 

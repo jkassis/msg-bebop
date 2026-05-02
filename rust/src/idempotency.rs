@@ -1,4 +1,6 @@
-use crate::{courier::DAO, db::DBTx, error::CourierError, receipt::Receipt, Msg};
+use crate::{
+    courier::DAO, db::DBTx, error::CourierError, receipt::Receipt, reliable::CourierWireMsg,
+};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -12,7 +14,7 @@ pub trait IdempotencyStrategy: Send + Sync {
         &self,
         dao: &DAO,
         dbtx: &dyn DBTx,
-        msg: &Msg,
+        msg: &CourierWireMsg,
         tick: u64,
     ) -> Result<IdempotencyResult, String>;
     fn on_tick(&self, dao: &DAO, dbtx: &dyn DBTx, tick: u64) -> Result<(), String>;
@@ -62,7 +64,7 @@ impl IdempotencyStrategy for ReceiptIdempotencyStrategy {
         &self,
         dao: &DAO,
         dbtx: &dyn DBTx,
-        msg: &Msg,
+        msg: &CourierWireMsg,
         tick: u64,
     ) -> Result<IdempotencyResult, String> {
         if let Some(mut receipt) = dao.rx_receipt_get(dbtx, &msg.id)? {
@@ -108,7 +110,7 @@ impl IdempotencyStrategy for ReceiptWindowIdempotencyStrategy {
         &self,
         dao: &DAO,
         dbtx: &dyn DBTx,
-        msg: &Msg,
+        msg: &CourierWireMsg,
         tick: u64,
     ) -> Result<IdempotencyResult, String> {
         if let Some(mut receipt) = dao.rx_receipt_get(dbtx, &msg.id)? {

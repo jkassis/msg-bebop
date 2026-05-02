@@ -13,11 +13,6 @@ pub mod expiration;
 pub mod idempotency;
 pub mod observability;
 pub mod rustie {
-    pub mod msg {
-        pub mod msg;
-        pub mod tx_sync;
-        pub mod txrx;
-    }
     pub mod trx {
         pub mod msg;
         pub mod tx_sync;
@@ -37,10 +32,9 @@ pub use expiration::*;
 pub use idempotency::*;
 pub use observability::*;
 pub use pact::*;
-pub use rustie::msg::msg::*;
-pub use rustie::msg::txrx::*;
+pub use rustie::trx::msg::*;
+pub use rustie::trx::txrx::*;
 pub use rustie::trx as trx;
-pub use reliable::*;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

@@ -1,5 +1,8 @@
+use crate::context::Context;
 use crate::trx::msg::Msg as TrxMsg;
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
+use std::sync::{Arc, RwLock};
 
 pub use crate::courier::Courier;
 pub use crate::expiration::{DlqExpirationHook, ExpirationHook, ExpiredEnvelope, NoopExpirationHook};
@@ -11,7 +14,70 @@ pub use crate::observability::{NoopObservabilityRecorder, ObservabilityEvent, Ob
 pub use crate::pact::Pact;
 pub use crate::receipt::Receipt;
 
-type LegacyCourierWireMsg = crate::rustie::msg::msg::Msg;
+fn default_msg_version() -> u16 {
+    1
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct CourierWireMsg {
+    pub body: String,
+    pub from_id: String,
+    pub id: String,
+    pub to_ids: Vec<String>,
+    pub type_: String,
+    #[serde(default = "default_msg_version")]
+    pub version: u16,
+    #[serde(default)]
+    pub ack_msg_id: Option<String>,
+    #[serde(default)]
+    pub ack_from_id: Option<String>,
+    #[serde(default)]
+    pub ack_to_id: Option<String>,
+    #[serde(default)]
+    pub ack_version: Option<u16>,
+}
+
+#[async_trait]
+pub trait Tx: Send + Sync {
+    async fn tx(&self, ctx: Arc<RwLock<Context>>, msg: &CourierWireMsg) -> Result<(), String>;
+}
+
+#[async_trait]
+pub trait Rx: Send + Sync {
+    async fn rx(&self, ctx: Arc<RwLock<Context>>, msg: &CourierWireMsg) -> Result<(), String>;
+}
+
+pub struct SyncTx {
+    receiver: RwLock<Option<Arc<dyn Rx + Send + Sync>>>,
+}
+
+impl SyncTx {
+    pub fn new() -> Self {
+        Self {
+            receiver: RwLock::new(None),
+        }
+    }
+
+    pub fn set_receiver(&self, receiver: Arc<dyn Rx + Send + Sync>) {
+        let mut receiver_guard = self.receiver.write().unwrap();
+        *receiver_guard = Some(receiver);
+    }
+}
+
+#[async_trait]
+impl Tx for SyncTx {
+    async fn tx(&self, ctx: Arc<RwLock<Context>>, msg: &CourierWireMsg) -> Result<(), String> {
+        let receiver_opt = {
+            let receiver_guard = self.receiver.read().unwrap();
+            receiver_guard.clone()
+        };
+        if let Some(receiver) = receiver_opt {
+            receiver.rx(ctx, msg).await
+        } else {
+            Err("Receiver not set".to_string())
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CourierAck {
@@ -38,7 +104,7 @@ impl CourierMsg {
         self
     }
 
-    pub fn from_legacy_wire_msg(msg: &LegacyCourierWireMsg) -> Self {
+    pub fn from_wire_msg(msg: &CourierWireMsg) -> Self {
         let ack = match (
             msg.ack_msg_id.as_ref(),
             msg.ack_from_id.as_ref(),
@@ -67,11 +133,11 @@ impl CourierMsg {
         }
     }
 
-    pub fn try_to_legacy_wire_msg(&self) -> Result<LegacyCourierWireMsg, String> {
+    pub fn try_to_wire_msg(&self) -> Result<CourierWireMsg, String> {
         let body = String::from_utf8(self.msg.body.clone())
             .map_err(|_| "courier legacy wire msg requires utf-8 body".to_string())?;
 
-        Ok(LegacyCourierWireMsg {
+        Ok(CourierWireMsg {
             body,
             from_id: self.msg.from_id.clone(),
             id: self.msg.id.clone(),

@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
+    use crate::reliable::CourierWireMsg;
     use crate::validate_receipt_horizon;
-    use crate::Msg;
     use crate::Pact;
     use crate::{CourierError, ErrorCategory};
 
     #[tokio::test]
     async fn test_msg_serialization() {
-        let msg = Msg {
+        let msg = CourierWireMsg {
             body: "Hello, World!".to_string(),
             from_id: "sender123".to_string(),
             id: "msg123".to_string(),
@@ -20,14 +20,14 @@ mod tests {
             ack_version: None,
         };
         let serialized = serde_json::to_string(&msg).unwrap();
-        let deserialized: Msg = serde_json::from_str(&serialized).unwrap();
+        let deserialized: CourierWireMsg = serde_json::from_str(&serialized).unwrap();
         assert_eq!(msg, deserialized);
     }
 
     #[tokio::test]
     async fn test_msg_deserialize_defaults_version_to_1() {
         let json = r#"{"id":"m1","from_id":"f","to_ids":["t"],"type_":"text","body":"b"}"#;
-        let msg: Msg = serde_json::from_str(json).unwrap();
+        let msg: CourierWireMsg = serde_json::from_str(json).unwrap();
         assert_eq!(msg.version, 1);
         assert!(msg.ack_msg_id.is_none());
         assert!(msg.ack_from_id.is_none());

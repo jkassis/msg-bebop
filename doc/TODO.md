@@ -15,6 +15,7 @@
 - A concrete cross-language wire contract now exists for base `trx` messages: in-memory raw bytes, JSON envelope body encoded as base64.
 - Shared `trx` conformance fixtures now exist for Rust, Go, and TypeScript.
 - A first concrete Rust `reliable` module now exists, including `CourierMsg` plus bridge conversions to the current legacy Courier wire shape.
+- The Rust crate root now treats `trx` as the canonical public `Msg` / `Tx` / `Rx` surface, while Courier-specific wire semantics live under `reliable`.
 
 ## To Production Readiness
 

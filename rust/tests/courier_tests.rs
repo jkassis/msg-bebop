@@ -8,9 +8,9 @@ mod courier_tests {
         idempotency::ReceiptIdempotencyStrategy,
         observability::NoopObservabilityRecorder,
         pact::Pact,
+        reliable::{CourierWireMsg as Msg, SyncTx, Tx, Rx},
         receipt::Receipt,
-        rustie::msg::{tx_sync::SyncTx, txrx::*},
-        Courier, Msg,
+        Courier,
     };
     use std::sync::{Arc, RwLock};
 

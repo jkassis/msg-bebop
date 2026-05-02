@@ -1,8 +1,14 @@
-use crate::{db::DBTx, Msg, Pact};
+use crate::{db::DBTx, reliable::CourierWireMsg, Pact};
 use serde::{Deserialize, Serialize};
 
 pub trait ExpirationHook: Send + Sync {
-    fn on_expire(&self, dbtx: &dyn DBTx, msg: &Msg, pact: &Pact, tick: u64) -> Result<(), String>;
+    fn on_expire(
+        &self,
+        dbtx: &dyn DBTx,
+        msg: &CourierWireMsg,
+        pact: &Pact,
+        tick: u64,
+    ) -> Result<(), String>;
 }
 
 pub struct NoopExpirationHook;
@@ -11,7 +17,7 @@ impl ExpirationHook for NoopExpirationHook {
     fn on_expire(
         &self,
         _dbtx: &dyn DBTx,
-        _msg: &Msg,
+        _msg: &CourierWireMsg,
         _pact: &Pact,
         _tick: u64,
     ) -> Result<(), String> {
@@ -21,7 +27,7 @@ impl ExpirationHook for NoopExpirationHook {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExpiredEnvelope {
-    pub msg: Msg,
+    pub msg: CourierWireMsg,
     pub pact: Pact,
     pub expired_at_tick: u64,
 }
@@ -37,7 +43,13 @@ impl DlqExpirationHook {
 }
 
 impl ExpirationHook for DlqExpirationHook {
-    fn on_expire(&self, dbtx: &dyn DBTx, msg: &Msg, pact: &Pact, tick: u64) -> Result<(), String> {
+    fn on_expire(
+        &self,
+        dbtx: &dyn DBTx,
+        msg: &CourierWireMsg,
+        pact: &Pact,
+        tick: u64,
+    ) -> Result<(), String> {
         let key = format!("{}:expired:{}:{}", self.key_prefix, tick, msg.id);
         let payload = ExpiredEnvelope {
             msg: msg.clone(),

@@ -1,4 +1,4 @@
-use courier::Msg;
+use courier::reliable::CourierWireMsg as Msg;
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::io::{BufRead, BufReader, Write};

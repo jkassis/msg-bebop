@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use crate::reliable::{CourierAck, CourierMsg};
-    use crate::rustie::msg::msg::Msg as LegacyCourierWireMsg;
+    use crate::reliable::{CourierAck, CourierMsg, CourierWireMsg};
     use crate::trx::msg::Msg;
 
     #[test]
@@ -32,7 +31,7 @@ mod tests {
 
     #[test]
     fn courier_msg_round_trips_through_legacy_wire_shape() {
-        let legacy = LegacyCourierWireMsg {
+        let legacy = CourierWireMsg {
             body: "hello".to_string(),
             from_id: "sender".to_string(),
             id: "m1".to_string(),
@@ -45,10 +44,8 @@ mod tests {
             ack_version: Some(1),
         };
 
-        let courier = CourierMsg::from_legacy_wire_msg(&legacy);
-        let encoded = courier
-            .try_to_legacy_wire_msg()
-            .expect("encode legacy courier wire msg");
+        let courier = CourierMsg::from_wire_msg(&legacy);
+        let encoded = courier.try_to_wire_msg().expect("encode legacy courier wire msg");
 
         assert_eq!(legacy, encoded);
     }
@@ -70,7 +67,7 @@ mod tests {
         });
 
         let err = courier
-            .try_to_legacy_wire_msg()
+            .try_to_wire_msg()
             .expect_err("non-utf8 body must fail for legacy wire shape");
         assert!(err.contains("utf-8"));
     }
