@@ -1,6 +1,6 @@
 module github.com/jkassis/courier-tests
 
-go 1.23.1
+go 1.25.8
 
 replace github.com/jkassis/courier => ../src
 
